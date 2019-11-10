@@ -1,12 +1,35 @@
 [package]
-name = "neotro_32_bios"
+name = "neotron_32_bios"
 version = "0.1.0"
 authors = ["Jonathan 'theJPster' Pallant <github@thejpster.org.uk>"]
 edition = "2018"
 description = "BIOS for the Neotron-32"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bin]]
+name = "neotron_32_bios"
+test = false
+bench = false
 
-[dependencies]
-neotron_common_bios = { git = "https://github.com/neotron-compute/neotron-common-bios" }
+[profile.release]
+lto = true
+debug = true
+codegen-units = 1
+opt-level = "s"
 
+[dependencies.tm4c123x-hal]
+version = "0.10"
+features = ["rt"]
+
+[dependencies.embedded-hal]
+version = "0.2"
+features = ["unproven"]
+
+[dependencies.cortex-m]
+version = "0.6"
+
+[dependencies.cortex-m-rt]
+version = "0.6"
+
+[dependencies.neotron_common_bios]
+# git = "https://github.com/neotron-compute/neotron-common-bios"
+path = "../Neotron-Common-BIOS"

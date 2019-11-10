@@ -31,5 +31,5 @@ version = "0.6"
 version = "0.6"
 
 [dependencies.neotron_common_bios]
-# git = "https://github.com/neotron-compute/neotron-common-bios"
-path = "../Neotron-Common-BIOS"
+git = "https://github.com/neotron-compute/neotron-common-bios"
+# path = "../Neotron-Common-BIOS"

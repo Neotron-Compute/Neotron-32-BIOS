@@ -1,5 +1,9 @@
 # Neotron 32 BIOS
 
+![Build Status](https://github.com/neotron-compute/Neotron-32-BIOS/workflows/Build/badge.svg "Github Action Build Status")
+
+![Format Status](https://github.com/neotron-compute/Neotron-32-BIOS/workflows/Format/badge.svg "Github Action Format Check Status")
+
 This is the BIOS for the Neotron 32. It implements the Neotron BIOS API (a hardware-abstraction layer used by the Neotron OS).
 
 ## Hardware

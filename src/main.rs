@@ -245,7 +245,7 @@ pub extern "C" fn api_version_get() -> u32 {
 }
 
 /// Get this BIOS version as a string.
-pub extern "C" fn bios_version_get() -> common::ApiString {
+pub extern "C" fn bios_version_get() -> common::ApiString<'static> {
     BIOS_VERSION.into()
 }
 

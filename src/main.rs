@@ -119,6 +119,8 @@ static API_CALLS: common::Api = common::Api {
     serial_configure,
     serial_get_info,
     serial_write,
+    time_get,
+    time_set,
 };
 
 static GLOBAL_BOARD: spin::Mutex<Option<BoardInner>> = spin::Mutex::new(None);
@@ -334,6 +336,16 @@ pub extern "C" fn serial_write(
     } else {
         panic!("HW Lock fail");
     }
+}
+
+/// Get the current wall time.
+pub extern "C" fn time_get() -> common::Time {
+    unimplemented!();
+}
+
+/// Set the current wall time.
+pub extern "C" fn time_set(new_time: common::Time) {
+    unimplemented!();
 }
 
 // ===========================================================================

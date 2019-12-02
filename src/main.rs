@@ -12,6 +12,23 @@
 //! System is located at address 0x0002_0000 (giving 128 KiB for the BIOS and
 //! 128 KiB for the OS).
 //!
+//! ## Hardware
+//!
+//! * TM4C123GH6PM System-on-Chip
+//!     * Cortex-M4F @ 80 MHz
+//!     * 32 KiB SRAM
+//!     * 256 KiB Flash ROM
+//!     * 256 KiB Flash ROM
+//! * PS/2 Keyboard and Mouse controller (connected to UART7)
+//! * Mono audio output
+//! * SD Card connector (connected to SSI3)
+//! * 800 x 600 resolution 8-colour VGA video output (connected to SSI0, SSI1 and SSI2)
+//! * MCP7940N I2C battery-backed Real Time Clock
+//! * USB Serial interface (connected to UART0)
+//! * RS-232 serial interface (connected to UART1)
+//! * MIDI In and Out (connected to UART3)
+//! * Atari compatible joystick interface
+//!
 //! ## License
 //!
 //!     Copyright (C) 2019 Jonathan 'theJPster' Pallant <github@thejpster.org.uk>

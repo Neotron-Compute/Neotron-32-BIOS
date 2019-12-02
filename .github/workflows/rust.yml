@@ -9,6 +9,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v1
+    - name: Checkout submodules
+      uses: textbook/git-checkout-submodule-action@2.0.0
     - name: Add Target
       run: rustup target add thumbv7em-none-eabi
     - name: Build

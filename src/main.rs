@@ -64,7 +64,6 @@ use core::fmt::Write;
 use core::panic::PanicInfo;
 use core::sync::atomic::{self, Ordering};
 use cortex_m_rt::entry;
-use embedded_hal::serial::Write as _hal_serial_Write;
 use hal::gpio::GpioExt;
 use hal::sysctl::SysctlExt;
 use hal::time::U32Ext;
@@ -316,21 +315,22 @@ pub extern "C" fn serial_write(
         // * if we get an error, return it.
         // * if we get a WouldBlock, spin (or WFI?).
         // * if we get Ok, carry on.
+        let data = data.as_slice();
         match device {
             0 => {
-                let _ = board.usb_uart.write(0x30);
-                common::Result::Ok(0)
+                board.usb_uart.write_all(data);
             }
             1 => {
-                let _ = board.rs232_uart.write(0x30);
-                common::Result::Ok(0)
+                board.rs232_uart.write_all(data);
             }
             2 => {
-                let _ = board.midi_uart.write(0x30);
-                common::Result::Ok(0)
+                board.midi_uart.write_all(data);
             }
-            _ => common::Result::Err(common::Error::InvalidDevice),
+            _ => {
+                return common::Result::Err(common::Error::InvalidDevice);
+            }
         }
+        common::Result::Ok(data.len())
     } else {
         panic!("HW Lock fail");
     }

@@ -15,10 +15,16 @@ The Neotron 32 is a revised version of the [Monotron](https://github.com/thejpst
 This BIOS is a work in progress. Bits of the Monotron firmware will be ported over one at a time. The todo list is:
 
 * [x] Get it booting
-* [ ] UART
+* [x] USB Serial UART (blocking)
+* [ ] Time Keeping
+* [ ] USB Serial UART (with timeouts)
+* [ ] RS-232 UART
+* [ ] MIDI UART
 * [ ] SD Card
 * [ ] Text Mode (48 x 36)
-* [ ] Audio
+* [ ] PS/2 Keyboard Interface
+* [ ] Audio Synthesiser
+* [ ] PS/2 Mouse Interface
 * [ ] Text Mode (80 x 36)
 
 ## Memory Map

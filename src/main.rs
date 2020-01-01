@@ -10,7 +10,8 @@
 //! We initialise the bare-minimum of hardware required to provide a console,
 //! and then jump to the Operating System. We currently assume the Operating
 //! System is located at address 0x0002_0000 (giving 128 KiB for the BIOS and
-//! 128 KiB for the OS).
+//! 128 KiB for the OS). The BIOS takes the top 8 KiB of RAM for stack and
+//! video ram. The OS is given the bottom 24 KiB of RAM.
 //!
 //! ## Hardware
 //!
@@ -279,7 +280,7 @@ pub extern "C" fn serial_configure(
 pub extern "C" fn serial_get_info(device: u8) -> common::Option<common::serial::DeviceInfo> {
     match device {
         0 => {
-            // Device 0 is UART 0, which goes to the USB JTAG/Debug interface.
+            // UART Device 0 is TM4C U0, which goes to the USB JTAG/Debug interface.
             // No hardware handshaking.
             common::Option::Some(common::serial::DeviceInfo {
                 device_type: common::serial::DeviceType::UsbCdc,
@@ -287,14 +288,14 @@ pub extern "C" fn serial_get_info(device: u8) -> common::Option<common::serial::
             })
         }
         1 => {
-            // Device 1 is UART 1, which is an RS232 interface with RTS/CTS
+            // UART Device 1 is TM4C U1, which is an RS232 interface with RTS/CTS
             common::Option::Some(common::serial::DeviceInfo {
                 device_type: common::serial::DeviceType::Rs232,
                 name: "UART1".into(),
             })
         }
         2 => {
-            // Device 2 is UART 3, which is the MIDI interface. Fixed baud, no
+            // UART Device 2 is TM4C U3, which is the MIDI interface. Fixed baud, no
             // hardware handshaking.
             common::Option::Some(common::serial::DeviceInfo {
                 device_type: common::serial::DeviceType::Midi,
@@ -344,7 +345,7 @@ pub extern "C" fn time_get() -> common::Time {
 }
 
 /// Set the current wall time.
-pub extern "C" fn time_set(new_time: common::Time) {
+pub extern "C" fn time_set(_new_time: common::Time) {
     unimplemented!();
 }
 

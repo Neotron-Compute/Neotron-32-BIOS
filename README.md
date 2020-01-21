@@ -45,7 +45,7 @@ The RAM layout is flexible - the BIOS takes as much as it needs, then passes the
 
 ## Licence
 
-    Neotron-32-BIOS Copyright (c) The Neotron Developers, 2019
+    Neotron-32-BIOS Copyright (c) The Neotron Developers, 2020
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by

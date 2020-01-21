@@ -80,7 +80,7 @@
 //!
 //! ## License
 //!
-//!     Copyright (C) 2019 Jonathan 'theJPster' Pallant <github@thejpster.org.uk>
+//!     Neotron-32-BIOS Copyright (c) The Neotron Developers, 2020
 //!
 //!     This program is free software: you can redistribute it and/or modify
 //!     it under the terms of the GNU General Public License as published by

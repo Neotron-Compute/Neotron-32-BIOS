@@ -30,6 +30,54 @@
 //! * MIDI In and Out (connected to UART3)
 //! * Atari compatible joystick interface
 //!
+//!
+//! ## Pinout
+//!
+//! As of PCB revision 1.2.0, the pinout for the Launchpad is:
+//!
+//! | Pin  |GPIO Name | PCB Net Name | Function                         | Field in BoardInner |
+//! |------|----------|--------------|----------------------------------|-|
+//! | J1.1 | N/A      |              | 3.3V output from on-board LDO    | |
+//! | J1.2 | PB5      |PB5_VGA_SYNC  | VGA Vertical Sync                | |
+//! | J1.3 | PB0      |PB0_U1RX      | UART RX from KB/MS/JS Controller | |
+//! | J1.4 | PB1      |PB1_U1TX      | UART TX to KB/MS/JS Controller   | |
+//! | J1.5 | PE4      |PE4_AUDIO_L   | Audio Left Channel               | |
+//! | J1.6 | PE5      |PE5_AUDIO_R   | Audio Right Channel              | |
+//! | J1.7 | PB4      |PB4_VGA_HSYNC | VGA Horizontal Sync              | |
+//! | J1.8 | PA5      |PA5_SPI_MOSI  | SPI MOSI                         | |
+//! | J1.9 | PA6      |PA6_I2C_SCL   | I2C Bus Clock                    | |
+//! | J1.10| PA7      |PA7_I2C_SDA   | I2C Bus Data                     | |
+//! | J2.1 | N/A      |GND           |                                  | |
+//! | J2.2 | PB2      |/PB2_STROBE   | Parallel Port Strobe Line        | |
+//! | J2.3 | PE0      |PE0_U7RX      | UART RX from WiFi Modem          | |
+//! | J2.4 | PF0      |/PF0_IRQ1     | IRQ 1 and Launchpad Button 1     | |
+//! | J2.5 | N/A      |/RESET        | Resets the CPU                   | |
+//! | J2.6 | PB7      |PB7_VGA_GREEN | VGA Green Channel                | |
+//! | J2.7 | PB6      |/PB6_SPI_CS2  | SPI Chip Select 2                | |
+//! | J2.8 | PA4      |PA4_SPI_MISO  | SPI MISO                         | |
+//! | J2.9 | PA3      |/PA3_SPI_CS0  | SPI Chip Select 0                | |
+//! | J2.10| PA2      |PA2_SPI_CLK   | SPI Clock                        | |
+//! | J3.1 | N/A      |5V            |                                  | |
+//! | J3.2 | N/A      |GND           |                                  | |
+//! | J3.3 | PD0      |              |                                  | |
+//! | J3.4 | PD1      |              |                                  | |
+//! | J3.5 | PD2      |/PD2_IRQ3     | IRQ 3                            | |
+//! | J3.6 | PD3      |PD3_VGA_BLUE  | VGA Blue Channel                 | |
+//! | J3.7 | PE1      |PE1_U7TX      | UART TX to WiFi Modem            | |
+//! | J3.8 | PE2      |/PE2_SPI_CS3  | SPI Chip Select 3                | |
+//! | J3.9 | PE3      |/PE3_IRQ2     | IRQ 2                            | |
+//! | J3.10| PF1      |PF1_VGA_RED   | VGA Red Channel                  | |
+//! | J4.1 | PF2      |              |                                  | |
+//! | J4.2 | PF3      |              |                                  | |
+//! | J4.3 | PB3      |/PB3_SPI_CS1  | SPI Chip Select 1                | |
+//! | J4.4 | PC4      |PC4_U1RTS     | UART RTS to RS-232               | |
+//! | J4.5 | PC5      |PC5_U1CTS     | UART CTS from RS-232             | |
+//! | J4.6 | PC6      |PC6_MIDI_IN   | UART RX from MIDI In             | |
+//! | J4.7 | PC7      |PC7_MIDI_OUT  | UART TX to MIDI Out              | |
+//! | J4.8 | PD6      |PD6_U2RX      | UART RX from RS-232              | |
+//! | J4.9 | PD7      |PD7_U2TX      | UART TX to RS-232                | |
+//! | J4.10| PF4      |              | Launchpad Button 2               | |
+//!
 //! ## License
 //!
 //!     Copyright (C) 2019 Jonathan 'theJPster' Pallant <github@thejpster.org.uk>
@@ -76,35 +124,86 @@ use neotron_common_bios as common;
 // Types
 // ===========================================================================
 
+/// Most of our pins are in Alternate Function Mode 1, so this saves some typing later.
+type AltFunc1 = hal::gpio::AlternateFunction<hal::gpio::AF1, hal::gpio::PushPull>;
+
+/// Some of our pins are in Alternate Function Mode 2, so this saves some typing later.
+type AltFunc2 = hal::gpio::AlternateFunction<hal::gpio::AF2, hal::gpio::PushPull>;
+
+/// Our I2C are in Alternate Function Mode 3 in Open Drain mode, so this saves some typing later.
+type AltFunc3 =
+    hal::gpio::AlternateFunction<hal::gpio::AF3, hal::gpio::OpenDrain<hal::gpio::Floating>>;
+
+/// We have two pins in Alternate Function Mode 8, so this saves some typing later.
+type AltFunc8 = hal::gpio::AlternateFunction<hal::gpio::AF8, hal::gpio::PushPull>;
+
+/// Soft VGA controller. Bit-bashes 3 bit (8 colour) VGA at 10, 20 or 40 MHz.
+pub struct Vga {
+    // Timer for generating horizontal sync pulses
+    h_timer: hal::tm4c123x::TIMER1,
+    // SSI peripheral for generating red pixels
+    red: hal::tm4c123x::SSI1,
+    // SSI peripheral for generating green pixels
+    green: hal::tm4c123x::SSI2,
+    // SSI peripheral for generating blue pixels
+    blue: hal::tm4c123x::SSI3,
+    // VGA Vertical Sync
+    sync_pin: hal::gpio::gpiob::PB5<hal::gpio::Output<hal::gpio::PushPull>>,
+    // VGA Horizontal Sync
+    hsync_pin: hal::gpio::gpiob::PB4<hal::gpio::Output<hal::gpio::PushPull>>,
+    // VGA Red Channel (SSI1 MOSI)
+    red_pin: hal::gpio::gpiof::PF1<AltFunc2>,
+    // VGA Green Channel (SSI2 MOSI)
+    green_pin: hal::gpio::gpiob::PB7<AltFunc2>,
+    // VGA Blue Channel (SSI3 MOSI)
+    blue_pin: hal::gpio::gpiod::PD3<AltFunc1>,
+}
+
 /// This holds our system state - all our HAL drivers, etc.
 pub struct BoardInner {
+    vga: Vga,
     usb_uart: hal::serial::Serial<
         hal::serial::UART0,
-        hal::gpio::gpioa::PA1<hal::gpio::AlternateFunction<hal::gpio::AF1, hal::gpio::PushPull>>,
-        hal::gpio::gpioa::PA0<hal::gpio::AlternateFunction<hal::gpio::AF1, hal::gpio::PushPull>>,
+        hal::gpio::gpioa::PA1<AltFunc1>,
+        hal::gpio::gpioa::PA0<AltFunc1>,
         (),
         (),
     >,
-    avr_uart: hal::serial::Serial<
+    hid_uart: hal::serial::Serial<
         hal::serial::UART7,
-        hal::gpio::gpioe::PE1<hal::gpio::AlternateFunction<hal::gpio::AF1, hal::gpio::PushPull>>,
-        hal::gpio::gpioe::PE0<hal::gpio::AlternateFunction<hal::gpio::AF1, hal::gpio::PushPull>>,
+        hal::gpio::gpioe::PE1<AltFunc1>,
+        hal::gpio::gpioe::PE0<AltFunc1>,
         (),
         (),
     >,
     midi_uart: hal::serial::Serial<
         hal::serial::UART3,
-        hal::gpio::gpioc::PC7<hal::gpio::AlternateFunction<hal::gpio::AF1, hal::gpio::PushPull>>,
-        hal::gpio::gpioc::PC6<hal::gpio::AlternateFunction<hal::gpio::AF1, hal::gpio::PushPull>>,
+        hal::gpio::gpioc::PC7<AltFunc1>,
+        hal::gpio::gpioc::PC6<AltFunc1>,
         (),
         (),
     >,
     rs232_uart: hal::serial::Serial<
         hal::serial::UART1,
-        hal::gpio::gpiob::PB1<hal::gpio::AlternateFunction<hal::gpio::AF1, hal::gpio::PushPull>>,
-        hal::gpio::gpiob::PB0<hal::gpio::AlternateFunction<hal::gpio::AF1, hal::gpio::PushPull>>,
-        hal::gpio::gpioc::PC4<hal::gpio::AlternateFunction<hal::gpio::AF8, hal::gpio::PushPull>>,
-        hal::gpio::gpioc::PC5<hal::gpio::AlternateFunction<hal::gpio::AF8, hal::gpio::PushPull>>,
+        hal::gpio::gpiob::PB1<AltFunc1>,
+        hal::gpio::gpiob::PB0<AltFunc1>,
+        hal::gpio::gpioc::PC4<AltFunc8>,
+        hal::gpio::gpioc::PC5<AltFunc8>,
+    >,
+    i2c_bus: hal::i2c::I2c<
+        hal::tm4c123x::I2C1,
+        (
+            hal::gpio::gpioa::PA6<AltFunc3>,
+            hal::gpio::gpioa::PA7<AltFunc3>,
+        ),
+    >,
+    spi_bus: hal::spi::Spi<
+        hal::tm4c123x::SSI0,
+        (
+            hal::gpio::gpioa::PA2<AltFunc2>,
+            hal::gpio::gpioa::PA4<AltFunc2>,
+            hal::gpio::gpioa::PA5<AltFunc2>,
+        ),
     >,
 }
 
@@ -148,13 +247,32 @@ fn main() -> ! {
     let mut porta = p.GPIO_PORTA.split(&sc.power_control);
     let mut portb = p.GPIO_PORTB.split(&sc.power_control);
     let mut portc = p.GPIO_PORTC.split(&sc.power_control);
-    // let mut portd = p.GPIO_PORTD.split(&sc.power_control);
+    let mut portd = p.GPIO_PORTD.split(&sc.power_control);
     let mut porte = p.GPIO_PORTE.split(&sc.power_control);
-    // let mut portf = p.GPIO_PORTF.split(&sc.power_control);
+    let mut portf = p.GPIO_PORTF.split(&sc.power_control);
 
     let mut board = BoardInner {
+        // Soft-VGA output
+        vga: Vga {
+            h_timer: p.TIMER1,
+            red: p.SSI1,
+            green: p.SSI2,
+            blue: p.SSI3,
+            sync_pin: portb.pb5.into_push_pull_output(),
+            hsync_pin: portb.pb4.into_push_pull_output(),
+            red_pin: portf
+                .pf1
+                .into_af_push_pull::<hal::gpio::AF2>(&mut portf.control),
+            green_pin: portb
+                .pb7
+                .into_af_push_pull::<hal::gpio::AF2>(&mut portb.control),
+            blue_pin: portd
+                .pd3
+                .into_af_push_pull::<hal::gpio::AF1>(&mut portd.control),
+        },
+
         // USB Serial UART
-        usb_uart: self::hal::serial::Serial::uart0(
+        usb_uart: hal::serial::Serial::uart0(
             p.UART0,
             porta
                 .pa1
@@ -165,13 +283,13 @@ fn main() -> ! {
             (),
             (),
             115_200_u32.bps(),
-            self::hal::serial::NewlineMode::SwapLFtoCRLF,
+            hal::serial::NewlineMode::SwapLFtoCRLF,
             &clocks,
             &sc.power_control,
         ),
 
         // MIDI UART
-        midi_uart: self::hal::serial::Serial::uart3(
+        midi_uart: hal::serial::Serial::uart3(
             p.UART3,
             portc
                 .pc7
@@ -182,13 +300,13 @@ fn main() -> ! {
             (),
             (),
             31250_u32.bps(),
-            self::hal::serial::NewlineMode::Binary,
+            hal::serial::NewlineMode::Binary,
             &clocks,
             &sc.power_control,
         ),
 
         // AVR UART
-        avr_uart: self::hal::serial::Serial::uart7(
+        hid_uart: hal::serial::Serial::uart7(
             p.UART7,
             porte
                 .pe1
@@ -199,13 +317,13 @@ fn main() -> ! {
             (),
             (),
             19200_u32.bps(),
-            self::hal::serial::NewlineMode::Binary,
+            hal::serial::NewlineMode::Binary,
             &clocks,
             &sc.power_control,
         ),
 
         // RS-232 UART
-        rs232_uart: self::hal::serial::Serial::uart1(
+        rs232_uart: hal::serial::Serial::uart1(
             p.UART1,
             portb
                 .pb1
@@ -220,7 +338,50 @@ fn main() -> ! {
                 .pc5
                 .into_af_push_pull::<hal::gpio::AF8>(&mut portc.control),
             115_200_u32.bps(),
-            self::hal::serial::NewlineMode::Binary,
+            hal::serial::NewlineMode::Binary,
+            &clocks,
+            &sc.power_control,
+        ),
+
+        // I2C Bus for RTC and Expansion Slots
+        i2c_bus: hal::i2c::I2c::i2c1(
+            p.I2C1,
+            (
+                porta
+                    .pa6
+                    .into_af_open_drain::<hal::gpio::AF3, hal::gpio::Floating>(&mut porta.control),
+                porta
+                    .pa7
+                    .into_af_open_drain::<hal::gpio::AF3, hal::gpio::Floating>(&mut porta.control),
+            ),
+            tm4c123x_hal::time::Hertz(100_000),
+            &clocks,
+            &sc.power_control,
+        ),
+
+        // SPI Bus for SD Card, I/O Expander, and Expansion Slots. Note this
+        // SPI peripheral doesn't understand chip-selects. We need to create a
+        // wrapper which does, and which can hand out objects which implement
+        // embedded_hal::spi::FullDuplex and automatically enable the
+        // appropriate chip-select.
+        //
+        // In fact, we probably want to change embedded-sdmmc to use the
+        // blocking SPI traits so the chip select only toggles once.
+        spi_bus: hal::spi::Spi::spi0(
+            p.SSI0,
+            (
+                porta
+                    .pa2
+                    .into_af_push_pull::<hal::gpio::AF2>(&mut porta.control),
+                porta
+                    .pa4
+                    .into_af_push_pull::<hal::gpio::AF2>(&mut porta.control),
+                porta
+                    .pa5
+                    .into_af_push_pull::<hal::gpio::AF2>(&mut porta.control),
+            ),
+            embedded_hal::spi::MODE_0,
+            250_000.hz(),
             &clocks,
             &sc.power_control,
         ),

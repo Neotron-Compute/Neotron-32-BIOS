@@ -436,7 +436,7 @@ fn main() -> ! {
 
     *GLOBAL_BOARD.lock() = Some(board);
 
-    let code: common::OsStartFn = unsafe { ::core::mem::transmute(0x0002_0000) };
+    let code: &common::OsStartFn = unsafe { ::core::mem::transmute(0x0002_0000) };
 
     code(&API_CALLS);
 }

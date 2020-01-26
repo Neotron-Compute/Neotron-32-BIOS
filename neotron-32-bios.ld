@@ -21,8 +21,10 @@
 /* Provides information about the memory layout of the device */
 MEMORY
 {
-    FLASH (rx)  : ORIGIN = 0x00000000, LENGTH = 0x00040000
-    RAM   (rwx) : ORIGIN = 0x20006000, LENGTH = 0x00002000
+    /* The BIOS gets the first 128 KiB of Flash, leaving 128 KiB for the OS */
+    FLASH (rx)  : ORIGIN = 0x00000000, LENGTH = 128K
+    /* The BIOS gets the top 6 KiB of SRAM (including the Stack), leaving 26 KiB for the OS (at 0x2000_0000 to 0x2000_67FF) */
+    RAM   (rwx) : ORIGIN = 0x20006800, LENGTH = 6K
 }
 
 /* # Entry point = reset vector */

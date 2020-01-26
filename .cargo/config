@@ -1,7 +1,7 @@
 [target.thumbv7em-none-eabihf]
-runner = 'arm-none-eabi-gdb'
+runner = 'arm-none-eabi-gdb --command=gdb.cfg -w'
 rustflags = [
-  "-C", "link-arg=-Tneotron-32-bios.x",
+  "-C", "link-arg=-Tneotron-32-bios.ld",
 ]
 
 [build]

@@ -38,38 +38,38 @@
 //! | Pin  |GPIO Name | PCB Net Name | Function                         | Field in BoardInner |
 //! |------|----------|--------------|----------------------------------|-|
 //! | J1.1 | N/A      |              | 3.3V output from on-board LDO    | |
-//! | J1.2 | PB5      |PB5_VGA_SYNC  | VGA Vertical Sync                | |
-//! | J1.3 | PB0      |PB0_U1RX      | UART RX from KB/MS/JS Controller | |
-//! | J1.4 | PB1      |PB1_U1TX      | UART TX to KB/MS/JS Controller   | |
-//! | J1.5 | PE4      |PE4_AUDIO_L   | Audio Left Channel               | |
-//! | J1.6 | PE5      |PE5_AUDIO_R   | Audio Right Channel              | |
-//! | J1.7 | PB4      |PB4_VGA_HSYNC | VGA Horizontal Sync              | |
-//! | J1.8 | PA5      |PA5_SPI_MOSI  | SPI MOSI                         | |
-//! | J1.9 | PA6      |PA6_I2C_SCL   | I2C Bus Clock                    | |
-//! | J1.10| PA7      |PA7_I2C_SDA   | I2C Bus Data                     | |
+//! | J1.2 | PB5      |PB5_VGA_SYNC  | VGA Vertical Sync                | `vga.vsync_pin` |
+//! | J1.3 | PB0      |PB0_U1RX      | UART RX from KB/MS/JS Controller | `hid_uart` |
+//! | J1.4 | PB1      |PB1_U1TX      | UART TX to KB/MS/JS Controller   | `hid_uart` |
+//! | J1.5 | PE4      |PE4_AUDIO_L   | Audio Left Channel               | `audio.left` |
+//! | J1.6 | PE5      |PE5_AUDIO_R   | Audio Right Channel              | `audio.right` |
+//! | J1.7 | PB4      |PB4_VGA_HSYNC | VGA Horizontal Sync              | `vga.hsync_pin` |
+//! | J1.8 | PA5      |PA5_SPI_MOSI  | SPI MOSI                         | `spi_bus` |
+//! | J1.9 | PA6      |PA6_I2C_SCL   | I2C Bus Clock                    | `i2c_bus` |
+//! | J1.10| PA7      |PA7_I2C_SDA   | I2C Bus Data                     | `i2c_bus` |
 //! | J2.1 | N/A      |GND           |                                  | |
 //! | J2.2 | PB2      |/PB2_STROBE   | Parallel Port Strobe Line        | |
 //! | J2.3 | PE0      |PE0_U7RX      | UART RX from WiFi Modem          | |
 //! | J2.4 | PF0      |/PF0_IRQ1     | IRQ 1 and Launchpad Button 1     | |
 //! | J2.5 | N/A      |/RESET        | Resets the CPU                   | |
-//! | J2.6 | PB7      |PB7_VGA_GREEN | VGA Green Channel                | |
-//! | J2.7 | PB6      |/PB6_SPI_CS2  | SPI Chip Select 2                | |
-//! | J2.8 | PA4      |PA4_SPI_MISO  | SPI MISO                         | |
-//! | J2.9 | PA3      |/PA3_SPI_CS0  | SPI Chip Select 0                | |
-//! | J2.10| PA2      |PA2_SPI_CLK   | SPI Clock                        | |
+//! | J2.6 | PB7      |PB7_VGA_GREEN | VGA Green Channel                | `vga.green_pin` |
+//! | J2.7 | PB6      |/PB6_SPI_CS2  | SPI Chip Select 2                | `spi_cs2` |
+//! | J2.8 | PA4      |PA4_SPI_MISO  | SPI MISO                         | `spi_bus` |
+//! | J2.9 | PA3      |/PA3_SPI_CS0  | SPI Chip Select 0                | `spi_cs0` |
+//! | J2.10| PA2      |PA2_SPI_CLK   | SPI Clock                        | `spi_bus` |
 //! | J3.1 | N/A      |5V            |                                  | |
 //! | J3.2 | N/A      |GND           |                                  | |
 //! | J3.3 | PD0      |              |                                  | |
 //! | J3.4 | PD1      |              |                                  | |
 //! | J3.5 | PD2      |/PD2_IRQ3     | IRQ 3                            | |
-//! | J3.6 | PD3      |PD3_VGA_BLUE  | VGA Blue Channel                 | |
+//! | J3.6 | PD3      |PD3_VGA_BLUE  | VGA Blue Channel                 | `vga.blue_pin` |
 //! | J3.7 | PE1      |PE1_U7TX      | UART TX to WiFi Modem            | |
-//! | J3.8 | PE2      |/PE2_SPI_CS3  | SPI Chip Select 3                | |
+//! | J3.8 | PE2      |/PE2_SPI_CS3  | SPI Chip Select 3                | `spi_cs3` |
 //! | J3.9 | PE3      |/PE3_IRQ2     | IRQ 2                            | |
-//! | J3.10| PF1      |PF1_VGA_RED   | VGA Red Channel                  | |
+//! | J3.10| PF1      |PF1_VGA_RED   | VGA Red Channel                  | `vga.red_pin` |
 //! | J4.1 | PF2      |              |                                  | |
 //! | J4.2 | PF3      |              |                                  | |
-//! | J4.3 | PB3      |/PB3_SPI_CS1  | SPI Chip Select 1                | |
+//! | J4.3 | PB3      |/PB3_SPI_CS1  | SPI Chip Select 1                | `spi_cs1` |
 //! | J4.4 | PC4      |PC4_U1RTS     | UART RTS to RS-232               | |
 //! | J4.5 | PC5      |PC5_U1CTS     | UART CTS from RS-232             | |
 //! | J4.6 | PC6      |PC6_MIDI_IN   | UART RX from MIDI In             | |
@@ -138,6 +138,7 @@ type AltFunc3 =
 type AltFunc8 = hal::gpio::AlternateFunction<hal::gpio::AF8, hal::gpio::PushPull>;
 
 /// Soft VGA controller. Bit-bashes 3 bit (8 colour) VGA at 10, 20 or 40 MHz.
+#[allow(dead_code)]
 pub struct Vga {
     // Timer for generating horizontal sync pulses
     h_timer: hal::tm4c123x::TIMER1,
@@ -148,7 +149,7 @@ pub struct Vga {
     // SSI peripheral for generating blue pixels
     blue: hal::tm4c123x::SSI3,
     // VGA Vertical Sync
-    sync_pin: hal::gpio::gpiob::PB5<hal::gpio::Output<hal::gpio::PushPull>>,
+    vsync_pin: hal::gpio::gpiob::PB5<hal::gpio::Output<hal::gpio::PushPull>>,
     // VGA Horizontal Sync
     hsync_pin: hal::gpio::gpiob::PB4<hal::gpio::Output<hal::gpio::PushPull>>,
     // VGA Red Channel (SSI1 MOSI)
@@ -159,9 +160,19 @@ pub struct Vga {
     blue_pin: hal::gpio::gpiod::PD3<AltFunc1>,
 }
 
+/// Soft Audio Controller
+#[allow(dead_code)]
+pub struct Audio {
+    left: hal::gpio::gpioe::PE4<hal::gpio::Output<hal::gpio::PushPull>>,
+    right: hal::gpio::gpioe::PE5<hal::gpio::Output<hal::gpio::PushPull>>,
+}
+
 /// This holds our system state - all our HAL drivers, etc.
+#[allow(dead_code)]
 pub struct BoardInner {
+    /// The VGA controller
     vga: Vga,
+    /// The UART connected to the on-board USB debug chip
     usb_uart: hal::serial::Serial<
         hal::serial::UART0,
         hal::gpio::gpioa::PA1<AltFunc1>,
@@ -169,6 +180,7 @@ pub struct BoardInner {
         (),
         (),
     >,
+    /// The UART connected to the Human-Input Device Controller chip (keyboard, mouse and joystick)
     hid_uart: hal::serial::Serial<
         hal::serial::UART7,
         hal::gpio::gpioe::PE1<AltFunc1>,
@@ -176,6 +188,7 @@ pub struct BoardInner {
         (),
         (),
     >,
+    /// The UART connected to the MIDI interface chip (MIDI Out and MIDI In)
     midi_uart: hal::serial::Serial<
         hal::serial::UART3,
         hal::gpio::gpioc::PC7<AltFunc1>,
@@ -183,6 +196,7 @@ pub struct BoardInner {
         (),
         (),
     >,
+    /// The UART connected to the RS232 level shifter (with RTS and CTS)
     rs232_uart: hal::serial::Serial<
         hal::serial::UART1,
         hal::gpio::gpiob::PB1<AltFunc1>,
@@ -190,6 +204,7 @@ pub struct BoardInner {
         hal::gpio::gpioc::PC4<AltFunc8>,
         hal::gpio::gpioc::PC5<AltFunc8>,
     >,
+    /// The Inter-Integrated Circuit Bus (aka the Two Wire Interface). Used to talk to the RTC.
     i2c_bus: hal::i2c::I2c<
         hal::tm4c123x::I2C1,
         (
@@ -197,6 +212,9 @@ pub struct BoardInner {
             hal::gpio::gpioa::PA7<AltFunc3>,
         ),
     >,
+    /// The Serial Peripheral Interface Bus. Has four chip selects, where CS0
+    /// is the SD Card and CS1 is the Parallel Port controller, while CS2, and
+    /// CS3 are on the expansion slots.
     spi_bus: hal::spi::Spi<
         hal::tm4c123x::SSI0,
         (
@@ -205,6 +223,20 @@ pub struct BoardInner {
             hal::gpio::gpioa::PA5<AltFunc2>,
         ),
     >,
+    /// Chip-select for the SD card
+    spi_cs0: hal::gpio::gpioa::PA3<hal::gpio::Output<hal::gpio::PushPull>>,
+    /// Chip-select for the Parallel Port controller
+    spi_cs1: hal::gpio::gpiob::PB3<hal::gpio::Output<hal::gpio::PushPull>>,
+    /// Chip-select for expansion slot A
+    spi_cs2: hal::gpio::gpiob::PB6<hal::gpio::Output<hal::gpio::PushPull>>,
+    /// Chip-select for expansion slot B
+    spi_cs3: hal::gpio::gpioe::PE2<hal::gpio::Output<hal::gpio::PushPull>>,
+    /// IRQ for the Parallel Port controller
+    irq1: hal::gpio::gpiof::PF0<hal::gpio::Input<hal::gpio::PullUp>>,
+    /// IRQ for expansion slot A
+    irq2: hal::gpio::gpioe::PE3<hal::gpio::Input<hal::gpio::PullUp>>,
+    /// IRQ for expansion slot B
+    irq3: hal::gpio::gpiod::PD2<hal::gpio::Input<hal::gpio::PullUp>>,
 }
 
 // ===========================================================================
@@ -258,7 +290,7 @@ fn main() -> ! {
             red: p.SSI1,
             green: p.SSI2,
             blue: p.SSI3,
-            sync_pin: portb.pb5.into_push_pull_output(),
+            vsync_pin: portb.pb5.into_push_pull_output(),
             hsync_pin: portb.pb4.into_push_pull_output(),
             red_pin: portf
                 .pf1
@@ -385,6 +417,14 @@ fn main() -> ! {
             &clocks,
             &sc.power_control,
         ),
+
+        spi_cs0: porta.pa3.into_push_pull_output(),
+        spi_cs1: portb.pb3.into_push_pull_output(),
+        spi_cs2: portb.pb6.into_push_pull_output(),
+        spi_cs3: porte.pe2.into_push_pull_output(),
+        irq1: portf.pf0.unlock(&mut portf.control).into_pull_up_input(),
+        irq2: porte.pe3.into_pull_up_input(),
+        irq3: portd.pd2.into_pull_up_input(),
     };
 
     writeln!(

@@ -97,8 +97,7 @@
 
 #![no_main]
 #![no_std]
-// This is broken by cortex-m-rt 0.6.11
-// #![deny(missing_docs)]
+#![deny(missing_docs)]
 
 // ===========================================================================
 // Sub-Modules

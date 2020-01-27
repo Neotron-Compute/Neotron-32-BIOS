@@ -276,6 +276,7 @@ static API_CALLS: common::Api = common::Api {
     time_set,
 };
 
+/// Holds the global state for the motherboard
 static GLOBAL_BOARD: spin::Mutex<Option<BoardInner>> = spin::Mutex::new(None);
 
 // ===========================================================================
@@ -564,12 +565,37 @@ pub extern "C" fn serial_write(
 
 /// Get the current wall time.
 pub extern "C" fn time_get() -> common::Time {
-    unimplemented!();
+    let (seconds_since_epoch, frames_since_second) = loop {
+        let seconds_since_epoch = SECONDS_SINCE_EPOCH.load(core::sync::atomic::Ordering::Acquire);
+        // There is a risk that the second will roll over while we do the read.
+        let frames_since_second = FRAMES_SINCE_SECOND.load(core::sync::atomic::Ordering::Acquire);
+        // So we read the second value twice.
+        let seconds_since_epoch2 = SECONDS_SINCE_EPOCH.load(core::sync::atomic::Ordering::Acquire);
+        // And if it's the same, we're all good.
+        if seconds_since_epoch2 == seconds_since_epoch {
+            break (seconds_since_epoch, frames_since_second);
+        }
+    };
+    common::Time {
+        seconds_since_epoch,
+        frames_since_second,
+    }
 }
 
 /// Set the current wall time.
-pub extern "C" fn time_set(_new_time: common::Time) {
-    unimplemented!();
+pub extern "C" fn time_set(new_time: common::Time) {
+    // This should stop us rolling over for a second
+    FRAMES_SINCE_SECOND.store(0, core::sync::atomic::Ordering::Release);
+    // Now it should be safe to update the time
+    SECONDS_SINCE_EPOCH.store(
+        new_time.seconds_since_epoch,
+        core::sync::atomic::Ordering::Release,
+    );
+    FRAMES_SINCE_SECOND.store(
+        new_time.frames_since_second,
+        core::sync::atomic::Ordering::Release,
+    );
+    // todo: Write the new time to the RTC (which is only accurate to the second)
 }
 
 // ===========================================================================

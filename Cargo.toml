@@ -36,5 +36,8 @@ version = "0.6"
 [dependencies.neotron_common_bios]
 path = "./common"
 
+[dependencies.embedded-sdmmc]
+version = "0.3"
+
 [dependencies.spin]
 version = "0.5"

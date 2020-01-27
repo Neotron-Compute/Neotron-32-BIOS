@@ -113,6 +113,7 @@ use core::fmt::Write;
 use core::panic::PanicInfo;
 use core::sync::atomic::{self, Ordering};
 use cortex_m_rt::entry;
+use embedded_sdmmc as sdmmc;
 use hal::gpio::GpioExt;
 use hal::sysctl::SysctlExt;
 use hal::time::U32Ext;
@@ -137,6 +138,22 @@ type AltFunc3 =
 /// We have two pins in Alternate Function Mode 8, so this saves some typing later.
 type AltFunc8 = hal::gpio::AlternateFunction<hal::gpio::AF8, hal::gpio::PushPull>;
 
+/// A push-pull output pin
+type PushPullOut = hal::gpio::Output<hal::gpio::PushPull>;
+
+/// An input pin with a pull-up
+type PullUpInput = hal::gpio::Input<hal::gpio::PullUp>;
+
+/// The type of our SPI bus
+type SpiDevice = hal::spi::Spi<
+    hal::tm4c123x::SSI0,
+    (
+        hal::gpio::gpioa::PA2<AltFunc2>,
+        hal::gpio::gpioa::PA4<AltFunc2>,
+        hal::gpio::gpioa::PA5<AltFunc2>,
+    ),
+>;
+
 /// Soft VGA controller. Bit-bashes 3 bit (8 colour) VGA at 10, 20 or 40 MHz.
 #[allow(dead_code)]
 pub struct Vga {
@@ -149,9 +166,9 @@ pub struct Vga {
     // SSI peripheral for generating blue pixels
     blue: hal::tm4c123x::SSI3,
     // VGA Vertical Sync
-    vsync_pin: hal::gpio::gpiob::PB5<hal::gpio::Output<hal::gpio::PushPull>>,
+    vsync_pin: hal::gpio::gpiob::PB5<PushPullOut>,
     // VGA Horizontal Sync
-    hsync_pin: hal::gpio::gpiob::PB4<hal::gpio::Output<hal::gpio::PushPull>>,
+    hsync_pin: hal::gpio::gpiob::PB4<PushPullOut>,
     // VGA Red Channel (SSI1 MOSI)
     red_pin: hal::gpio::gpiof::PF1<AltFunc2>,
     // VGA Green Channel (SSI2 MOSI)
@@ -163,8 +180,8 @@ pub struct Vga {
 /// Soft Audio Controller
 #[allow(dead_code)]
 pub struct Audio {
-    left: hal::gpio::gpioe::PE4<hal::gpio::Output<hal::gpio::PushPull>>,
-    right: hal::gpio::gpioe::PE5<hal::gpio::Output<hal::gpio::PushPull>>,
+    left: hal::gpio::gpioe::PE4<PushPullOut>,
+    right: hal::gpio::gpioe::PE5<PushPullOut>,
 }
 
 /// This holds our system state - all our HAL drivers, etc.
@@ -212,39 +229,43 @@ pub struct BoardInner {
             hal::gpio::gpioa::PA7<AltFunc3>,
         ),
     >,
-    /// The Serial Peripheral Interface Bus. Has four chip selects, where CS0
-    /// is the SD Card and CS1 is the Parallel Port controller, while CS2, and
-    /// CS3 are on the expansion slots.
-    spi_bus: hal::spi::Spi<
-        hal::tm4c123x::SSI0,
-        (
-            hal::gpio::gpioa::PA2<AltFunc2>,
-            hal::gpio::gpioa::PA4<AltFunc2>,
-            hal::gpio::gpioa::PA5<AltFunc2>,
-        ),
-    >,
-    /// Chip-select for the SD card
-    spi_cs0: hal::gpio::gpioa::PA3<hal::gpio::Output<hal::gpio::PushPull>>,
+    /// Currently, the SD/MMC controller device 'owns' our SPI bus. This is OK
+    /// though, as we can 'borrow' the SPI device whenever we want. It'll only
+    /// be a problem if we get another driver that wants to own the bus. We
+    /// could pass in a proxy object, but the SD/MMC controller only uses the
+    /// single-byte `FullDuplex` trait, rather than the blocking trait (to
+    /// avoid needing to allocate big buffers) and we wouldn't want to either
+    /// toggle the CSx pin for each word, nor grab the spin lock for each
+    /// word.
+    sd_mmc: sdmmc::SdMmcSpi<SpiDevice, hal::gpio::gpioa::PA3<PushPullOut>>,
     /// Chip-select for the Parallel Port controller
-    spi_cs1: hal::gpio::gpiob::PB3<hal::gpio::Output<hal::gpio::PushPull>>,
+    spi_cs1: hal::gpio::gpiob::PB3<PushPullOut>,
     /// Chip-select for expansion slot A
-    spi_cs2: hal::gpio::gpiob::PB6<hal::gpio::Output<hal::gpio::PushPull>>,
+    spi_cs2: hal::gpio::gpiob::PB6<PushPullOut>,
     /// Chip-select for expansion slot B
-    spi_cs3: hal::gpio::gpioe::PE2<hal::gpio::Output<hal::gpio::PushPull>>,
+    spi_cs3: hal::gpio::gpioe::PE2<PushPullOut>,
     /// IRQ for the Parallel Port controller
-    irq1: hal::gpio::gpiof::PF0<hal::gpio::Input<hal::gpio::PullUp>>,
+    irq1: hal::gpio::gpiof::PF0<PullUpInput>,
     /// IRQ for expansion slot A
-    irq2: hal::gpio::gpioe::PE3<hal::gpio::Input<hal::gpio::PullUp>>,
+    irq2: hal::gpio::gpioe::PE3<PullUpInput>,
     /// IRQ for expansion slot B
-    irq3: hal::gpio::gpiod::PD2<hal::gpio::Input<hal::gpio::PullUp>>,
+    irq3: hal::gpio::gpiod::PD2<PullUpInput>,
 }
 
 // ===========================================================================
 // Static Variables and Constants
 // ===========================================================================
 
+/// Records the number of seconds that have elapsed since the epoch (2000-01-01T00:00:00Z).
+static SECONDS_SINCE_EPOCH: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+/// Records the number of frames that have elapsed since second last rolled over.
+static FRAMES_SINCE_SECOND: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(0);
+
+/// The BIOS version string
 static BIOS_VERSION: &str = concat!("Neotron 32 BIOS, version ", env!("CARGO_PKG_VERSION"), "\0");
 
+/// The table of API calls we provide the OS
 static API_CALLS: common::Api = common::Api {
     api_version_get,
     bios_version_get,
@@ -399,26 +420,27 @@ fn main() -> ! {
         //
         // In fact, we probably want to change embedded-sdmmc to use the
         // blocking SPI traits so the chip select only toggles once.
-        spi_bus: hal::spi::Spi::spi0(
-            p.SSI0,
-            (
-                porta
-                    .pa2
-                    .into_af_push_pull::<hal::gpio::AF2>(&mut porta.control),
-                porta
-                    .pa4
-                    .into_af_push_pull::<hal::gpio::AF2>(&mut porta.control),
-                porta
-                    .pa5
-                    .into_af_push_pull::<hal::gpio::AF2>(&mut porta.control),
+        sd_mmc: sdmmc::SdMmcSpi::new(
+            hal::spi::Spi::spi0(
+                p.SSI0,
+                (
+                    porta
+                        .pa2
+                        .into_af_push_pull::<hal::gpio::AF2>(&mut porta.control),
+                    porta
+                        .pa4
+                        .into_af_push_pull::<hal::gpio::AF2>(&mut porta.control),
+                    porta
+                        .pa5
+                        .into_af_push_pull::<hal::gpio::AF2>(&mut porta.control),
+                ),
+                embedded_hal::spi::MODE_0,
+                250_000.hz(),
+                &clocks,
+                &sc.power_control,
             ),
-            embedded_hal::spi::MODE_0,
-            250_000.hz(),
-            &clocks,
-            &sc.power_control,
+            porta.pa3.into_push_pull_output(),
         ),
-
-        spi_cs0: porta.pa3.into_push_pull_output(),
         spi_cs1: portb.pb3.into_push_pull_output(),
         spi_cs2: portb.pb6.into_push_pull_output(),
         spi_cs3: porte.pe2.into_push_pull_output(),

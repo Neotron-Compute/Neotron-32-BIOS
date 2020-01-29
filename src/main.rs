@@ -35,7 +35,7 @@
 //!
 //! As of PCB revision 1.2.0, the pinout for the Launchpad is:
 //!
-//! | Pin  |GPIO Name | PCB Net Name | Function                         | Field in BoardInner |
+//! | Pin  |GPIO Name | PCB Net Name | Function                         | Field in Board |
 //! |------|----------|--------------|----------------------------------|-|
 //! | J1.1 | N/A      |              | 3.3V output from on-board LDO    | |
 //! | J1.2 | PB5      |PB5_VGA_SYNC  | VGA Vertical Sync                | `vga.vsync_pin` |
@@ -125,17 +125,20 @@ use neotron_common_bios as common;
 // Types
 // ===========================================================================
 
-/// Most of our pins are in Alternate Function Mode 1, so this saves some typing later.
+/// Most of our pins are in Alternate Function Mode 1.
 type AltFunc1 = hal::gpio::AlternateFunction<hal::gpio::AF1, hal::gpio::PushPull>;
 
-/// Some of our pins are in Alternate Function Mode 2, so this saves some typing later.
+/// Some of our pins are in Alternate Function Mode 2.
 type AltFunc2 = hal::gpio::AlternateFunction<hal::gpio::AF2, hal::gpio::PushPull>;
 
-/// Our I2C are in Alternate Function Mode 3 in Open Drain mode, so this saves some typing later.
-type AltFunc3 =
+/// Our I2C SCL pin is in Alternate Function Mode 3 in Push-Pull mode.
+type AltFunc3PP = hal::gpio::AlternateFunction<hal::gpio::AF3, hal::gpio::PushPull>;
+
+/// Our I2C SDA pin is in Alternate Function Mode 3 in Open Drain mode.
+type AltFunc3OD =
     hal::gpio::AlternateFunction<hal::gpio::AF3, hal::gpio::OpenDrain<hal::gpio::Floating>>;
 
-/// We have two pins in Alternate Function Mode 8, so this saves some typing later.
+/// We have two pins in Alternate Function Mode 8.
 type AltFunc8 = hal::gpio::AlternateFunction<hal::gpio::AF8, hal::gpio::PushPull>;
 
 /// A push-pull output pin
@@ -186,7 +189,7 @@ pub struct Audio {
 
 /// This holds our system state - all our HAL drivers, etc.
 #[allow(dead_code)]
-pub struct BoardInner {
+pub struct Board {
     /// The VGA controller
     vga: Vga,
     /// The UART connected to the on-board USB debug chip
@@ -225,8 +228,8 @@ pub struct BoardInner {
     i2c_bus: hal::i2c::I2c<
         hal::tm4c123x::I2C1,
         (
-            hal::gpio::gpioa::PA6<AltFunc3>,
-            hal::gpio::gpioa::PA7<AltFunc3>,
+            hal::gpio::gpioa::PA6<AltFunc3PP>,
+            hal::gpio::gpioa::PA7<AltFunc3OD>,
         ),
     >,
     /// Currently, the SD/MMC controller device 'owns' our SPI bus. This is OK
@@ -251,6 +254,12 @@ pub struct BoardInner {
     /// IRQ for expansion slot B
     irq3: hal::gpio::gpiod::PD2<PullUpInput>,
 }
+
+/// Makes it possible to share an I2C bus with a driver that wants to own the
+/// bus.
+struct I2cBus<'a, T>(&'a mut T)
+where
+    T: embedded_hal::blocking::i2c::Write + embedded_hal::blocking::i2c::WriteRead;
 
 // ===========================================================================
 // Static Variables and Constants
@@ -277,7 +286,7 @@ static API_CALLS: common::Api = common::Api {
 };
 
 /// Holds the global state for the motherboard
-static GLOBAL_BOARD: spin::Mutex<Option<BoardInner>> = spin::Mutex::new(None);
+static GLOBAL_BOARD: spin::Mutex<Option<Board>> = spin::Mutex::new(None);
 
 // ===========================================================================
 // Public Functions
@@ -305,7 +314,7 @@ fn main() -> ! {
     let mut porte = p.GPIO_PORTE.split(&sc.power_control);
     let mut portf = p.GPIO_PORTF.split(&sc.power_control);
 
-    let mut board = BoardInner {
+    let mut board = Board {
         // Soft-VGA output
         vga: Vga {
             h_timer: p.TIMER1,
@@ -397,13 +406,13 @@ fn main() -> ! {
             &sc.power_control,
         ),
 
-        // I2C Bus for RTC and Expansion Slots
+        // I²C bus for RTC and Expansion Slots. SDA is open-drain but SCL isn't (see the TM4C123 TRM page 657)
         i2c_bus: hal::i2c::I2c::i2c1(
             p.I2C1,
             (
                 porta
                     .pa6
-                    .into_af_open_drain::<hal::gpio::AF3, hal::gpio::Floating>(&mut porta.control),
+                    .into_af_push_pull::<hal::gpio::AF3>(&mut porta.control),
                 porta
                     .pa7
                     .into_af_open_drain::<hal::gpio::AF3, hal::gpio::Floating>(&mut porta.control),
@@ -452,16 +461,57 @@ fn main() -> ! {
 
     writeln!(
         board.usb_uart,
-        "{}",
+        "{} booting...",
         &BIOS_VERSION[..BIOS_VERSION.len() - 1]
     )
     .unwrap();
+
+    load_time(&mut board);
 
     *GLOBAL_BOARD.lock() = Some(board);
 
     let code: &common::OsStartFn = unsafe { ::core::mem::transmute(0x0002_0000) };
 
     code(&API_CALLS);
+}
+
+fn load_time(board: &mut Board) {
+    use chrono::prelude::*;
+    writeln!(board.usb_uart, "Checking for time...",).unwrap();
+    use mcp794xx::Rtcc;
+    let bus = I2cBus(&mut board.i2c_bus);
+    let mut rtc = mcp794xx::Mcp794xx::new_mcp7940n(bus);
+    let dt = match rtc.get_datetime() {
+        Ok(dt) => dt,
+        Err(e) => {
+            writeln!(board.usb_uart, "Error reading RTC: {:?}", e).unwrap();
+            return;
+        }
+    };
+    let chrono_dt = chrono::Utc
+        .ymd(dt.year as i32, dt.month as u32, dt.day as u32)
+        .and_hms(
+            match dt.hour {
+                mcp794xx::Hours::H24(n) => n as u32,
+                mcp794xx::Hours::AM(n) => n as u32,
+                mcp794xx::Hours::PM(n) => n as u32 + 12u32,
+            },
+            dt.minute as u32,
+            dt.second as u32,
+        );
+    let posix_time = chrono_dt.timestamp();
+    let our_epoch = Utc.ymd(2000, 1, 1).and_hms(0, 0, 0).timestamp();
+    let seconds_since_epoch = (posix_time - our_epoch) as u32;
+    writeln!(
+        board.usb_uart,
+        "Time is {} ({})",
+        chrono_dt, seconds_since_epoch
+    )
+    .unwrap();
+    time_set(common::Time {
+        seconds_since_epoch,
+        frames_since_second: 0,
+    });
 }
 
 /// Get the API version this crate implements
@@ -609,6 +659,32 @@ fn panic(_info: &PanicInfo) -> ! {
     // TODO: Print the crash info to the console
     loop {
         atomic::compiler_fence(Ordering::SeqCst);
+    }
+}
+
+impl<'a, T> embedded_hal::blocking::i2c::Write for I2cBus<'a, T>
+where
+    T: embedded_hal::blocking::i2c::Write + embedded_hal::blocking::i2c::WriteRead,
+{
+    type Error = <T as embedded_hal::blocking::i2c::Write>::Error;
+    fn write(&mut self, register: u8, buffer: &[u8]) -> Result<(), Self::Error> {
+        self.0.write(register, buffer)
+    }
+}
+
+impl<'a, T> embedded_hal::blocking::i2c::WriteRead for I2cBus<'a, T>
+where
+    T: embedded_hal::blocking::i2c::Write + embedded_hal::blocking::i2c::WriteRead,
+{
+    type Error = <T as embedded_hal::blocking::i2c::WriteRead>::Error;
+
+    fn write_read(
+        &mut self,
+        register: u8,
+        out_buffer: &[u8],
+        in_buffer: &mut [u8],
+    ) -> Result<(), Self::Error> {
+        self.0.write_read(register, out_buffer, in_buffer)
     }
 }
 

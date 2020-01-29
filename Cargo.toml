@@ -1,5 +1,5 @@
 [package]
-name = "neotron_32_bios"
+name = "neotron-32-bios"
 version = "0.1.0"
 authors = ["Jonathan 'theJPster' Pallant <github@thejpster.org.uk>"]
 edition = "2018"
@@ -9,7 +9,7 @@ readme = "README.md"
 repository = "https://github.com/neotron-compute/Neotron-32-BIOS"
 
 [[bin]]
-name = "neotron_32_bios"
+name = "neotron-32-bios"
 test = false
 bench = false
 
@@ -19,25 +19,13 @@ debug = true
 codegen-units = 1
 opt-level = "s"
 
-[dependencies.tm4c123x-hal]
-version = "0.10"
-features = ["rt"]
-
-[dependencies.embedded-hal]
-version = "0.2"
-features = ["unproven"]
-
-[dependencies.cortex-m]
-version = "0.6"
-
-[dependencies.cortex-m-rt]
-version = "0.6"
-
-[dependencies.neotron_common_bios]
-path = "./common"
-
-[dependencies.embedded-sdmmc]
-version = "0.3"
-
-[dependencies.spin]
-version = "0.5"
+[dependencies]
+chrono = { version = "0.4", default-features=false }
+cortex-m = "0.6"
+cortex-m-rt = "0.6"
+embedded-hal = { version = "0.2", features = ["unproven"] }
+embedded-sdmmc = "0.3"
+mcp794xx = "0.1"
+neotron-common-bios = { path = "./common" }
+spin = "0.5"
+tm4c123x-hal = { version = "0.10", features = ["rt"] }

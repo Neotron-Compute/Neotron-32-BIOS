@@ -24,7 +24,7 @@
 //! * Mono audio output
 //! * SD Card connector (connected to SSI3)
 //! * 800 x 600 resolution 8-colour VGA video output (connected to SSI0, SSI1 and SSI2)
-//! * MCP7940N I2C battery-backed Real Time Clock
+//! * MCP7940N I²C battery-backed Real Time Clock
 //! * USB Serial interface (connected to UART0)
 //! * RS-232 serial interface (connected to UART1)
 //! * MIDI In and Out (connected to UART3)
@@ -45,8 +45,8 @@
 //! | J1.6 | PE5      |PE5_AUDIO_R   | Audio Right Channel              | `audio.right` |
 //! | J1.7 | PB4      |PB4_VGA_HSYNC | VGA Horizontal Sync              | `vga.hsync_pin` |
 //! | J1.8 | PA5      |PA5_SPI_MOSI  | SPI MOSI                         | `spi_bus` |
-//! | J1.9 | PA6      |PA6_I2C_SCL   | I2C Bus Clock                    | `i2c_bus` |
-//! | J1.10| PA7      |PA7_I2C_SDA   | I2C Bus Data                     | `i2c_bus` |
+//! | J1.9 | PA6      |PA6_I2C_SCL   | I²C Bus Clock                    | `i2c_bus` |
+//! | J1.10| PA7      |PA7_I2C_SDA   | I²C Bus Data                     | `i2c_bus` |
 //! | J2.1 | N/A      |GND           |                                  | |
 //! | J2.2 | PB2      |/PB2_STROBE   | Parallel Port Strobe Line        | |
 //! | J2.3 | PE0      |PE0_U7RX      | UART RX from WiFi Modem          | |
@@ -114,10 +114,10 @@ use core::panic::PanicInfo;
 use core::sync::atomic::{self, Ordering};
 use cortex_m_rt::entry;
 use embedded_sdmmc as sdmmc;
-use hal::gpio::GpioExt;
-use hal::sysctl::SysctlExt;
-use hal::time::U32Ext;
-use tm4c123x_hal as hal;
+use tm4c123x_hal::gpio::{self, GpioExt};
+use tm4c123x_hal::sysctl::SysctlExt;
+use tm4c123x_hal::time::U32Ext;
+use tm4c123x_hal::tm4c123x as cpu;
 
 use neotron_common_bios as common;
 
@@ -126,34 +126,33 @@ use neotron_common_bios as common;
 // ===========================================================================
 
 /// Most of our pins are in Alternate Function Mode 1.
-type AltFunc1 = hal::gpio::AlternateFunction<hal::gpio::AF1, hal::gpio::PushPull>;
+type AltFunc1 = gpio::AlternateFunction<gpio::AF1, gpio::PushPull>;
 
 /// Some of our pins are in Alternate Function Mode 2.
-type AltFunc2 = hal::gpio::AlternateFunction<hal::gpio::AF2, hal::gpio::PushPull>;
+type AltFunc2 = gpio::AlternateFunction<gpio::AF2, gpio::PushPull>;
 
-/// Our I2C SCL pin is in Alternate Function Mode 3 in Push-Pull mode.
-type AltFunc3PP = hal::gpio::AlternateFunction<hal::gpio::AF3, hal::gpio::PushPull>;
+/// Our I²C SCL pin is in Alternate Function Mode 3 in Push-Pull mode.
+type AltFunc3PP = gpio::AlternateFunction<gpio::AF3, gpio::PushPull>;
 
-/// Our I2C SDA pin is in Alternate Function Mode 3 in Open Drain mode.
-type AltFunc3OD =
-    hal::gpio::AlternateFunction<hal::gpio::AF3, hal::gpio::OpenDrain<hal::gpio::Floating>>;
+/// Our I²C SDA pin is in Alternate Function Mode 3 in Open Drain mode.
+type AltFunc3OD = gpio::AlternateFunction<gpio::AF3, gpio::OpenDrain<gpio::Floating>>;
 
 /// We have two pins in Alternate Function Mode 8.
-type AltFunc8 = hal::gpio::AlternateFunction<hal::gpio::AF8, hal::gpio::PushPull>;
+type AltFunc8 = gpio::AlternateFunction<gpio::AF8, gpio::PushPull>;
 
 /// A push-pull output pin
-type PushPullOut = hal::gpio::Output<hal::gpio::PushPull>;
+type PushPullOut = gpio::Output<gpio::PushPull>;
 
 /// An input pin with a pull-up
-type PullUpInput = hal::gpio::Input<hal::gpio::PullUp>;
+type PullUpInput = gpio::Input<gpio::PullUp>;
 
 /// The type of our SPI bus
-type SpiDevice = hal::spi::Spi<
-    hal::tm4c123x::SSI0,
+type SpiDevice = tm4c123x_hal::spi::Spi<
+    cpu::SSI0,
     (
-        hal::gpio::gpioa::PA2<AltFunc2>,
-        hal::gpio::gpioa::PA4<AltFunc2>,
-        hal::gpio::gpioa::PA5<AltFunc2>,
+        gpio::gpioa::PA2<AltFunc2>,
+        gpio::gpioa::PA4<AltFunc2>,
+        gpio::gpioa::PA5<AltFunc2>,
     ),
 >;
 
@@ -161,30 +160,30 @@ type SpiDevice = hal::spi::Spi<
 #[allow(dead_code)]
 pub struct Vga {
     // Timer for generating horizontal sync pulses
-    h_timer: hal::tm4c123x::TIMER1,
+    h_timer: cpu::TIMER1,
     // SSI peripheral for generating red pixels
-    red: hal::tm4c123x::SSI1,
+    red: cpu::SSI1,
     // SSI peripheral for generating green pixels
-    green: hal::tm4c123x::SSI2,
+    green: cpu::SSI2,
     // SSI peripheral for generating blue pixels
-    blue: hal::tm4c123x::SSI3,
+    blue: cpu::SSI3,
     // VGA Vertical Sync
-    vsync_pin: hal::gpio::gpiob::PB5<PushPullOut>,
+    vsync_pin: gpio::gpiob::PB5<PushPullOut>,
     // VGA Horizontal Sync
-    hsync_pin: hal::gpio::gpiob::PB4<PushPullOut>,
+    hsync_pin: gpio::gpiob::PB4<PushPullOut>,
     // VGA Red Channel (SSI1 MOSI)
-    red_pin: hal::gpio::gpiof::PF1<AltFunc2>,
+    red_pin: gpio::gpiof::PF1<AltFunc2>,
     // VGA Green Channel (SSI2 MOSI)
-    green_pin: hal::gpio::gpiob::PB7<AltFunc2>,
+    green_pin: gpio::gpiob::PB7<AltFunc2>,
     // VGA Blue Channel (SSI3 MOSI)
-    blue_pin: hal::gpio::gpiod::PD3<AltFunc1>,
+    blue_pin: gpio::gpiod::PD3<AltFunc1>,
 }
 
 /// Soft Audio Controller
 #[allow(dead_code)]
 pub struct Audio {
-    left: hal::gpio::gpioe::PE4<PushPullOut>,
-    right: hal::gpio::gpioe::PE5<PushPullOut>,
+    left: gpio::gpioe::PE4<PushPullOut>,
+    right: gpio::gpioe::PE5<PushPullOut>,
 }
 
 /// This holds our system state - all our HAL drivers, etc.
@@ -193,44 +192,41 @@ pub struct Board {
     /// The VGA controller
     vga: Vga,
     /// The UART connected to the on-board USB debug chip
-    usb_uart: hal::serial::Serial<
-        hal::serial::UART0,
-        hal::gpio::gpioa::PA1<AltFunc1>,
-        hal::gpio::gpioa::PA0<AltFunc1>,
+    usb_uart: tm4c123x_hal::serial::Serial<
+        tm4c123x_hal::serial::UART0,
+        gpio::gpioa::PA1<AltFunc1>,
+        gpio::gpioa::PA0<AltFunc1>,
         (),
         (),
     >,
     /// The UART connected to the Human-Input Device Controller chip (keyboard, mouse and joystick)
-    hid_uart: hal::serial::Serial<
-        hal::serial::UART7,
-        hal::gpio::gpioe::PE1<AltFunc1>,
-        hal::gpio::gpioe::PE0<AltFunc1>,
+    hid_uart: tm4c123x_hal::serial::Serial<
+        tm4c123x_hal::serial::UART7,
+        gpio::gpioe::PE1<AltFunc1>,
+        gpio::gpioe::PE0<AltFunc1>,
         (),
         (),
     >,
     /// The UART connected to the MIDI interface chip (MIDI Out and MIDI In)
-    midi_uart: hal::serial::Serial<
-        hal::serial::UART3,
-        hal::gpio::gpioc::PC7<AltFunc1>,
-        hal::gpio::gpioc::PC6<AltFunc1>,
+    midi_uart: tm4c123x_hal::serial::Serial<
+        tm4c123x_hal::serial::UART3,
+        gpio::gpioc::PC7<AltFunc1>,
+        gpio::gpioc::PC6<AltFunc1>,
         (),
         (),
     >,
     /// The UART connected to the RS232 level shifter (with RTS and CTS)
-    rs232_uart: hal::serial::Serial<
-        hal::serial::UART1,
-        hal::gpio::gpiob::PB1<AltFunc1>,
-        hal::gpio::gpiob::PB0<AltFunc1>,
-        hal::gpio::gpioc::PC4<AltFunc8>,
-        hal::gpio::gpioc::PC5<AltFunc8>,
+    rs232_uart: tm4c123x_hal::serial::Serial<
+        tm4c123x_hal::serial::UART1,
+        gpio::gpiob::PB1<AltFunc1>,
+        gpio::gpiob::PB0<AltFunc1>,
+        gpio::gpioc::PC4<AltFunc8>,
+        gpio::gpioc::PC5<AltFunc8>,
     >,
     /// The Inter-Integrated Circuit Bus (aka the Two Wire Interface). Used to talk to the RTC.
-    i2c_bus: hal::i2c::I2c<
-        hal::tm4c123x::I2C1,
-        (
-            hal::gpio::gpioa::PA6<AltFunc3PP>,
-            hal::gpio::gpioa::PA7<AltFunc3OD>,
-        ),
+    i2c_bus: tm4c123x_hal::i2c::I2c<
+        cpu::I2C1,
+        (gpio::gpioa::PA6<AltFunc3PP>, gpio::gpioa::PA7<AltFunc3OD>),
     >,
     /// Currently, the SD/MMC controller device 'owns' our SPI bus. This is OK
     /// though, as we can 'borrow' the SPI device whenever we want. It'll only
@@ -240,22 +236,22 @@ pub struct Board {
     /// avoid needing to allocate big buffers) and we wouldn't want to either
     /// toggle the CSx pin for each word, nor grab the spin lock for each
     /// word.
-    sd_mmc: sdmmc::SdMmcSpi<SpiDevice, hal::gpio::gpioa::PA3<PushPullOut>>,
+    sd_mmc: sdmmc::SdMmcSpi<SpiDevice, gpio::gpioa::PA3<PushPullOut>>,
     /// Chip-select for the Parallel Port controller
-    spi_cs1: hal::gpio::gpiob::PB3<PushPullOut>,
+    spi_cs1: gpio::gpiob::PB3<PushPullOut>,
     /// Chip-select for expansion slot A
-    spi_cs2: hal::gpio::gpiob::PB6<PushPullOut>,
+    spi_cs2: gpio::gpiob::PB6<PushPullOut>,
     /// Chip-select for expansion slot B
-    spi_cs3: hal::gpio::gpioe::PE2<PushPullOut>,
+    spi_cs3: gpio::gpioe::PE2<PushPullOut>,
     /// IRQ for the Parallel Port controller
-    irq1: hal::gpio::gpiof::PF0<PullUpInput>,
+    irq1: gpio::gpiof::PF0<PullUpInput>,
     /// IRQ for expansion slot A
-    irq2: hal::gpio::gpioe::PE3<PullUpInput>,
+    irq2: gpio::gpioe::PE3<PullUpInput>,
     /// IRQ for expansion slot B
-    irq3: hal::gpio::gpiod::PD2<PullUpInput>,
+    irq3: gpio::gpiod::PD2<PullUpInput>,
 }
 
-/// Makes it possible to share an I2C bus with a driver that wants to own the
+/// Makes it possible to share an I²C bus with a driver that wants to own the
 /// bus.
 struct I2cBus<'a, T>(&'a mut T)
 where
@@ -266,10 +262,10 @@ where
 // ===========================================================================
 
 /// Records the number of seconds that have elapsed since the epoch (2000-01-01T00:00:00Z).
-static SECONDS_SINCE_EPOCH: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+static SECONDS_SINCE_EPOCH: atomic::AtomicU32 = atomic::AtomicU32::new(0);
 
 /// Records the number of frames that have elapsed since second last rolled over.
-static FRAMES_SINCE_SECOND: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(0);
+static FRAMES_SINCE_SECOND: atomic::AtomicU8 = atomic::AtomicU8::new(0);
 
 /// The BIOS version string
 static BIOS_VERSION: &str = concat!("Neotron 32 BIOS, version ", env!("CARGO_PKG_VERSION"), "\0");
@@ -296,17 +292,23 @@ static GLOBAL_BOARD: spin::Mutex<Option<Board>> = spin::Mutex::new(None);
 /// `cortex-m-rt`.
 #[entry]
 fn main() -> ! {
-    // Grab the singletons
-    let p = hal::Peripherals::take().unwrap();
+    // Grab the peripheral singleton from the TM4C123 HAL.
+    let p = tm4c123x_hal::Peripherals::take().unwrap();
 
     // Set the system up for 80 MHz
     let mut sc = p.SYSCTL.constrain();
-    sc.clock_setup.oscillator = hal::sysctl::Oscillator::Main(
-        hal::sysctl::CrystalFrequency::_16mhz,
-        hal::sysctl::SystemClock::UsePll(hal::sysctl::PllOutputFrequency::_80_00mhz),
+    sc.clock_setup.oscillator = tm4c123x_hal::sysctl::Oscillator::Main(
+        tm4c123x_hal::sysctl::CrystalFrequency::_16mhz,
+        tm4c123x_hal::sysctl::SystemClock::UsePll(
+            tm4c123x_hal::sysctl::PllOutputFrequency::_80_00mhz,
+        ),
     );
+
+    // This object records what speed we set the chip to. Things like the UART
+    // setup need it to calculate baud rate registers correctly.
     let clocks = sc.clock_setup.freeze();
 
+    // Pins. So many pins.
     let mut porta = p.GPIO_PORTA.split(&sc.power_control);
     let mut portb = p.GPIO_PORTB.split(&sc.power_control);
     let mut portc = p.GPIO_PORTC.split(&sc.power_control);
@@ -314,6 +316,7 @@ fn main() -> ! {
     let mut porte = p.GPIO_PORTE.split(&sc.power_control);
     let mut portf = p.GPIO_PORTF.split(&sc.power_control);
 
+    // Construct the bumper object holding all the drivers.
     let mut board = Board {
         // Soft-VGA output
         vga: Vga {
@@ -323,99 +326,71 @@ fn main() -> ! {
             blue: p.SSI3,
             vsync_pin: portb.pb5.into_push_pull_output(),
             hsync_pin: portb.pb4.into_push_pull_output(),
-            red_pin: portf
-                .pf1
-                .into_af_push_pull::<hal::gpio::AF2>(&mut portf.control),
-            green_pin: portb
-                .pb7
-                .into_af_push_pull::<hal::gpio::AF2>(&mut portb.control),
-            blue_pin: portd
-                .pd3
-                .into_af_push_pull::<hal::gpio::AF1>(&mut portd.control),
+            red_pin: portf.pf1.into_af_push_pull::<gpio::AF2>(&mut portf.control),
+            green_pin: portb.pb7.into_af_push_pull::<gpio::AF2>(&mut portb.control),
+            blue_pin: portd.pd3.into_af_push_pull::<gpio::AF1>(&mut portd.control),
         },
 
         // USB Serial UART
-        usb_uart: hal::serial::Serial::uart0(
+        usb_uart: tm4c123x_hal::serial::Serial::uart0(
             p.UART0,
-            porta
-                .pa1
-                .into_af_push_pull::<hal::gpio::AF1>(&mut porta.control),
-            porta
-                .pa0
-                .into_af_push_pull::<hal::gpio::AF1>(&mut porta.control),
+            porta.pa1.into_af_push_pull::<gpio::AF1>(&mut porta.control),
+            porta.pa0.into_af_push_pull::<gpio::AF1>(&mut porta.control),
             (),
             (),
             115_200_u32.bps(),
-            hal::serial::NewlineMode::SwapLFtoCRLF,
+            tm4c123x_hal::serial::NewlineMode::SwapLFtoCRLF,
             &clocks,
             &sc.power_control,
         ),
 
         // MIDI UART
-        midi_uart: hal::serial::Serial::uart3(
+        midi_uart: tm4c123x_hal::serial::Serial::uart3(
             p.UART3,
-            portc
-                .pc7
-                .into_af_push_pull::<hal::gpio::AF1>(&mut portc.control),
-            portc
-                .pc6
-                .into_af_push_pull::<hal::gpio::AF1>(&mut portc.control),
+            portc.pc7.into_af_push_pull::<gpio::AF1>(&mut portc.control),
+            portc.pc6.into_af_push_pull::<gpio::AF1>(&mut portc.control),
             (),
             (),
             31250_u32.bps(),
-            hal::serial::NewlineMode::Binary,
+            tm4c123x_hal::serial::NewlineMode::Binary,
             &clocks,
             &sc.power_control,
         ),
 
         // AVR UART
-        hid_uart: hal::serial::Serial::uart7(
+        hid_uart: tm4c123x_hal::serial::Serial::uart7(
             p.UART7,
-            porte
-                .pe1
-                .into_af_push_pull::<hal::gpio::AF1>(&mut porte.control),
-            porte
-                .pe0
-                .into_af_push_pull::<hal::gpio::AF1>(&mut porte.control),
+            porte.pe1.into_af_push_pull::<gpio::AF1>(&mut porte.control),
+            porte.pe0.into_af_push_pull::<gpio::AF1>(&mut porte.control),
             (),
             (),
             19200_u32.bps(),
-            hal::serial::NewlineMode::Binary,
+            tm4c123x_hal::serial::NewlineMode::Binary,
             &clocks,
             &sc.power_control,
         ),
 
         // RS-232 UART
-        rs232_uart: hal::serial::Serial::uart1(
+        rs232_uart: tm4c123x_hal::serial::Serial::uart1(
             p.UART1,
-            portb
-                .pb1
-                .into_af_push_pull::<hal::gpio::AF1>(&mut portb.control),
-            portb
-                .pb0
-                .into_af_push_pull::<hal::gpio::AF1>(&mut portb.control),
-            portc
-                .pc4
-                .into_af_push_pull::<hal::gpio::AF8>(&mut portc.control),
-            portc
-                .pc5
-                .into_af_push_pull::<hal::gpio::AF8>(&mut portc.control),
+            portb.pb1.into_af_push_pull::<gpio::AF1>(&mut portb.control),
+            portb.pb0.into_af_push_pull::<gpio::AF1>(&mut portb.control),
+            portc.pc4.into_af_push_pull::<gpio::AF8>(&mut portc.control),
+            portc.pc5.into_af_push_pull::<gpio::AF8>(&mut portc.control),
             115_200_u32.bps(),
-            hal::serial::NewlineMode::Binary,
+            tm4c123x_hal::serial::NewlineMode::Binary,
             &clocks,
             &sc.power_control,
         ),
 
         // I²C bus for RTC and Expansion Slots. SDA is open-drain but SCL isn't (see the TM4C123 TRM page 657)
-        i2c_bus: hal::i2c::I2c::i2c1(
+        i2c_bus: tm4c123x_hal::i2c::I2c::i2c1(
             p.I2C1,
             (
-                porta
-                    .pa6
-                    .into_af_push_pull::<hal::gpio::AF3>(&mut porta.control),
+                porta.pa6.into_af_push_pull::<gpio::AF3>(&mut porta.control),
                 porta
                     .pa7
-                    .into_af_open_drain::<hal::gpio::AF3, hal::gpio::Floating>(&mut porta.control),
+                    .into_af_open_drain::<gpio::AF3, gpio::Floating>(&mut porta.control),
             ),
             tm4c123x_hal::time::Hertz(100_000),
             &clocks,
@@ -431,18 +406,12 @@ fn main() -> ! {
         // In fact, we probably want to change embedded-sdmmc to use the
         // blocking SPI traits so the chip select only toggles once.
         sd_mmc: sdmmc::SdMmcSpi::new(
-            hal::spi::Spi::spi0(
+            tm4c123x_hal::spi::Spi::spi0(
                 p.SSI0,
                 (
-                    porta
-                        .pa2
-                        .into_af_push_pull::<hal::gpio::AF2>(&mut porta.control),
-                    porta
-                        .pa4
-                        .into_af_push_pull::<hal::gpio::AF2>(&mut porta.control),
-                    porta
-                        .pa5
-                        .into_af_push_pull::<hal::gpio::AF2>(&mut porta.control),
+                    porta.pa2.into_af_push_pull::<gpio::AF2>(&mut porta.control),
+                    porta.pa4.into_af_push_pull::<gpio::AF2>(&mut porta.control),
+                    porta.pa5.into_af_push_pull::<gpio::AF2>(&mut porta.control),
                 ),
                 embedded_hal::spi::MODE_0,
                 250_000.hz(),
@@ -459,6 +428,7 @@ fn main() -> ! {
         irq3: portd.pd2.into_pull_up_input(),
     };
 
+    // Say hello to the nice users.
     writeln!(
         board.usb_uart,
         "{} booting...",
@@ -466,52 +436,21 @@ fn main() -> ! {
     )
     .unwrap();
 
+    // Fetch the time from the RTC. It might be wrong, but our internal time
+    // is *definitely* wrong, so this never makes things worse.
     load_time(&mut board);
 
+    // Stash the big object with all the driver state somewhere we can access
+    // it from the BIOS callback functions.
     *GLOBAL_BOARD.lock() = Some(board);
 
+    // On this BIOS, the flash split between BIOS and OS is fixed. This value
+    // must match the BIOS linker script and the OS linker script.
     let code: &common::OsStartFn = unsafe { ::core::mem::transmute(0x0002_0000) };
 
+    // We assume the OS can initialise its own memory, as we have no idea how
+    // much it's using so we can't initialise the memory for it.
     code(&API_CALLS);
-}
-
-fn load_time(board: &mut Board) {
-    use chrono::prelude::*;
-    writeln!(board.usb_uart, "Checking for time...",).unwrap();
-    use mcp794xx::Rtcc;
-    let bus = I2cBus(&mut board.i2c_bus);
-    let mut rtc = mcp794xx::Mcp794xx::new_mcp7940n(bus);
-    let dt = match rtc.get_datetime() {
-        Ok(dt) => dt,
-        Err(e) => {
-            writeln!(board.usb_uart, "Error reading RTC: {:?}", e).unwrap();
-            return;
-        }
-    };
-    let chrono_dt = chrono::Utc
-        .ymd(dt.year as i32, dt.month as u32, dt.day as u32)
-        .and_hms(
-            match dt.hour {
-                mcp794xx::Hours::H24(n) => n as u32,
-                mcp794xx::Hours::AM(n) => n as u32,
-                mcp794xx::Hours::PM(n) => n as u32 + 12u32,
-            },
-            dt.minute as u32,
-            dt.second as u32,
-        );
-    let posix_time = chrono_dt.timestamp();
-    let our_epoch = Utc.ymd(2000, 1, 1).and_hms(0, 0, 0).timestamp();
-    let seconds_since_epoch = (posix_time - our_epoch) as u32;
-    writeln!(
-        board.usb_uart,
-        "Time is {} ({})",
-        chrono_dt, seconds_since_epoch
-    )
-    .unwrap();
-    time_set(common::Time {
-        seconds_since_epoch,
-        frames_since_second: 0,
-    });
 }
 
 /// Get the API version this crate implements
@@ -616,11 +555,11 @@ pub extern "C" fn serial_write(
 /// Get the current wall time.
 pub extern "C" fn time_get() -> common::Time {
     let (seconds_since_epoch, frames_since_second) = loop {
-        let seconds_since_epoch = SECONDS_SINCE_EPOCH.load(core::sync::atomic::Ordering::Acquire);
+        let seconds_since_epoch = SECONDS_SINCE_EPOCH.load(atomic::Ordering::Acquire);
         // There is a risk that the second will roll over while we do the read.
-        let frames_since_second = FRAMES_SINCE_SECOND.load(core::sync::atomic::Ordering::Acquire);
+        let frames_since_second = FRAMES_SINCE_SECOND.load(atomic::Ordering::Acquire);
         // So we read the second value twice.
-        let seconds_since_epoch2 = SECONDS_SINCE_EPOCH.load(core::sync::atomic::Ordering::Acquire);
+        let seconds_since_epoch2 = SECONDS_SINCE_EPOCH.load(atomic::Ordering::Acquire);
         // And if it's the same, we're all good.
         if seconds_since_epoch2 == seconds_since_epoch {
             break (seconds_since_epoch, frames_since_second);
@@ -635,16 +574,10 @@ pub extern "C" fn time_get() -> common::Time {
 /// Set the current wall time.
 pub extern "C" fn time_set(new_time: common::Time) {
     // This should stop us rolling over for a second
-    FRAMES_SINCE_SECOND.store(0, core::sync::atomic::Ordering::Release);
+    FRAMES_SINCE_SECOND.store(0, atomic::Ordering::Release);
     // Now it should be safe to update the time
-    SECONDS_SINCE_EPOCH.store(
-        new_time.seconds_since_epoch,
-        core::sync::atomic::Ordering::Release,
-    );
-    FRAMES_SINCE_SECOND.store(
-        new_time.frames_since_second,
-        core::sync::atomic::Ordering::Release,
-    );
+    SECONDS_SINCE_EPOCH.store(new_time.seconds_since_epoch, atomic::Ordering::Release);
+    FRAMES_SINCE_SECOND.store(new_time.frames_since_second, atomic::Ordering::Release);
     // todo: Write the new time to the RTC (which is only accurate to the second)
 }
 
@@ -660,6 +593,60 @@ fn panic(_info: &PanicInfo) -> ! {
     loop {
         atomic::compiler_fence(Ordering::SeqCst);
     }
+}
+
+/// Grab the current time from the MCP7940N Real-Time Clock (RTC).
+///
+/// We create a new instance of the mcp794xx driver, bind it to the I²C bus
+/// and then get the time from the chip. Because the driver wants to 'own' the
+/// I²C bus object it is given, but we can't give it our I²C bus because it
+/// belongs to a larger structure we're only (mutably) borrowing, we create an
+/// `I2cBus` object as a proxy. It's ugly, but it works.
+///
+/// This function is going to be fairly slow, and is only accurate to the
+/// nearest second, so don't do it very often. Once, at start-up, is probably
+/// fine as we can get the CPU to keep track of time.
+///
+/// Before anyone notes that there is already a battery-backed RTC on the
+/// TM4C123 chip itself - yes there is, but the TM4C Launchpad doesn't bring
+/// out the battery backup power pins anywhere useful, making the RTC useless.
+fn load_time(board: &mut Board) {
+    use chrono::prelude::*;
+    writeln!(board.usb_uart, "Checking for time...",).unwrap();
+    use mcp794xx::Rtcc;
+    let bus = I2cBus(&mut board.i2c_bus);
+    let mut rtc = mcp794xx::Mcp794xx::new_mcp7940n(bus);
+    let dt = match rtc.get_datetime() {
+        Ok(dt) => dt,
+        Err(e) => {
+            writeln!(board.usb_uart, "Error reading RTC: {:?}", e).unwrap();
+            return;
+        }
+    };
+    let chrono_dt = chrono::Utc
+        .ymd(dt.year as i32, dt.month as u32, dt.day as u32)
+        .and_hms(
+            match dt.hour {
+                mcp794xx::Hours::H24(n) => n as u32,
+                mcp794xx::Hours::AM(n) => n as u32,
+                mcp794xx::Hours::PM(n) => n as u32 + 12u32,
+            },
+            dt.minute as u32,
+            dt.second as u32,
+        );
+    let posix_time = chrono_dt.timestamp();
+    let our_epoch = Utc.ymd(2000, 1, 1).and_hms(0, 0, 0).timestamp();
+    let seconds_since_epoch = (posix_time - our_epoch) as u32;
+    writeln!(
+        board.usb_uart,
+        "Time is {} ({})",
+        chrono_dt, seconds_since_epoch
+    )
+    .unwrap();
+    time_set(common::Time {
+        seconds_since_epoch,
+        frames_since_second: 0,
+    });
 }
 
 impl<'a, T> embedded_hal::blocking::i2c::Write for I2cBus<'a, T>

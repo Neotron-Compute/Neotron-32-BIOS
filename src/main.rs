@@ -283,6 +283,7 @@ static API_CALLS: common::Api = common::Api {
     serial_write,
     time_get,
     time_set,
+    video_memory_info_get,
 };
 
 /// Holds the global state for the motherboard
@@ -493,6 +494,7 @@ fn main() -> ! {
 
     unsafe {
         FRAMEBUFFER.init(vga_hw);
+        FRAMEBUFFER.set_cursor_visible(false);
     }
 
     // Say hello to the nice users.
@@ -502,12 +504,6 @@ fn main() -> ! {
     // is *definitely* wrong, so this never makes things worse.
     load_time(&mut board);
 
-    println!("Time is now {:?}", time_get());
-    for _ in 0..3_000_000 {
-        cortex_m::asm::nop();
-    }
-    println!("Time is now {:?}", time_get());
-
     // Stash the big object with all the driver state somewhere we can access
     // it from the BIOS callback functions.
     *GLOBAL_BOARD.lock() = Some(board);
@@ -515,8 +511,6 @@ fn main() -> ! {
     // On this BIOS, the flash split between BIOS and OS is fixed. This value
     // must match the BIOS linker script and the OS linker script.
     let code: &common::OsStartFn = unsafe { ::core::mem::transmute(0x0002_0000) };
-
-    loop {}
 
     // We assume the OS can initialise its own memory, as we have no idea how
     // much it's using so we can't initialise the memory for it.
@@ -651,6 +645,17 @@ pub extern "C" fn time_set(new_time: common::Time) {
     // todo: Write the new time to the RTC (which is only accurate to the second)
 }
 
+/// Gets information about the memory-mapped text buffer.
+pub extern "C" fn video_memory_info_get(
+    address: &mut *mut u8,
+    width_cols: &mut u8,
+    height_rows: &mut u8,
+) {
+    *address = unsafe { FRAMEBUFFER.get_address() };
+    *width_cols = 48;
+    *height_rows = 36;
+}
+
 // ===========================================================================
 // Private Functions
 // ===========================================================================
@@ -701,9 +706,9 @@ fn load_time(board: &mut Board) {
     }
 
     let posix_time = dt.timestamp();
+    println!("Time is {}", dt);
     let our_epoch = Utc.ymd(2001, 1, 1).and_hms(0, 0, 0).timestamp();
     let seconds_since_epoch = (posix_time - our_epoch) as u32;
-    println!("Time is {} ({})", dt, seconds_since_epoch);
     time_set(common::Time {
         seconds_since_epoch,
         frames_since_second: 0,

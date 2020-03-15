@@ -25,7 +25,8 @@ cortex-m = "0.6"
 cortex-m-rt = "0.6"
 embedded-hal = { version = "0.2", features = ["unproven"] }
 embedded-sdmmc = "0.3"
-mcp794xx = "0.1"
+mcp794xx = "0.2"
 neotron-common-bios = { path = "./common" }
 spin = "0.5"
 tm4c123x-hal = { version = "0.10", features = ["rt"] }
+vga-framebuffer = { version = "0.9.0", features = ["const_fn"] }

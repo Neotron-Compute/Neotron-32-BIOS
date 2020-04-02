@@ -30,5 +30,8 @@ neotron-common-bios = { path = "./common" }
 spin = "0.5"
 tm4c123x-hal = { version = "0.10", features = ["rt"] }
 #vga-framebuffer = { version = "0.9.0", features = ["const_fn"] }
-vga-framebuffer = { git = "https://github.com/thejpster/vga-framebuffer-rs.git", branch="remove_double_height_mode", features=["const_fn"] }
+vga-framebuffer = { git = "https://github.com/thejpster/vga-framebuffer-rs.git", branch="remove_double_height_mode" }
 #vga-framebuffer = { path="../../vga-framebuffer-rs", features = ["const_fn"] }
+
+[build-dependencies]
+cc = "1.0"

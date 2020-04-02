@@ -98,7 +98,6 @@
 #![no_main]
 #![no_std]
 #![deny(missing_docs)]
-#![feature(asm)]
 
 // ===========================================================================
 // Sub-Modules
@@ -969,7 +968,7 @@ fn enable(p: hal::sysctl::Domain, sc: &mut hal::sysctl::PowerControl) {
 #[interrupt]
 fn TIMER2A() {
     unsafe {
-        asm!("wfi");
+        cortex_m::asm::wfi();
         let timer = &*cpu::TIMER2::ptr();
         timer.icr.write(|w| w.caecint().set_bit());
     }
@@ -1018,84 +1017,14 @@ fn TIMER1A() {
 /// Called on start of pixel data (end of back porch)
 #[interrupt]
 fn TIMER1B() {
-    // Activate the three FIFOs exactly 32 clock cycles (or 8 pixels) apart This
-    // gets the colour video lined up, as we preload the red channel with 0x00
-    // 0x00 and the green channel with 0x00.
     unsafe {
-        asm!(
-            "movs    r0, #132;
-            movs    r1, #1;
-            movt    r0, #16914;
-            mov.w   r2, #131072;
-            mov.w   r3, #262144;
-            str r1, [r0, #0];
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            str r1, [r0, r2];
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            str r1, [r0, r3];
-            "
-            :
-            :
-            : "r0" "r1" "r2" "r3"
-            : "volatile");
+        extern "C" {
+            fn __delay_spi();
+        }
+        // Activate the three SPI FIFOs exactly 32 clock cycles (or 8 pixels)
+        // apart. This gets the colour video lined up, as we preload the red
+        // channel with 0x00 0x00 and the green channel with 0x00.
+        __delay_spi();
         // Clear timer B interrupt
         let timer = &*cpu::TIMER1::ptr();
         timer.icr.write(|w| w.cbecint().set_bit());

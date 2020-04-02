@@ -691,18 +691,30 @@ fn load_time(board: &mut Board) {
     use mcp794xx::Rtcc;
     let bus = I2cBus(&mut board.i2c_bus);
     let mut rtc = mcp794xx::Mcp794xx::new_mcp7940n(bus);
-    let dt = match rtc.get_datetime() {
+    let mut dt = match rtc.get_datetime() {
         Ok(dt) => dt,
         Err(e) => {
             println!("Error reading RTC: {:?}", e);
             return;
         }
     };
-    if dt.year() == 2001 {
+    if dt.year() == 2001 || rtc.has_power_failed().unwrap_or(true) {
         // Clock has been reset - setting the time starts the clock running
         // again
-        rtc.set_datetime(&dt)
-            .unwrap_or_else(|x| println!("Failed to update RTC! {:?}", x));
+        println!("RTC Battery Failed! Please set time/date.");
+        dt = NaiveDate::from_ymd(2020, 03, 01).and_hms(0, 0, 0);
+        if let Err(e) = rtc.clear_power_failed() {
+            println!("RTC Error: {:?}", e);
+        }
+        if let Err(e) = rtc.enable_backup_battery_power() {
+            println!("RTC Error {:?}", e);
+        }
+        if let Err(e) = rtc.set_datetime(&dt) {
+            println!("RTC Error {:?}", e);
+        }
+        if let Err(e) = rtc.enable() {
+            println!("RTC Error {:?}", e);
+        }
     }
 
     let posix_time = dt.timestamp();

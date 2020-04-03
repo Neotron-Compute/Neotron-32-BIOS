@@ -134,10 +134,7 @@ type AltFunc1 = gpio::AlternateFunction<gpio::AF1, gpio::PushPull>;
 /// Some of our pins are in Alternate Function Mode 2.
 type AltFunc2 = gpio::AlternateFunction<gpio::AF2, gpio::PushPull>;
 
-/// Our I²C SCL pin is in Alternate Function Mode 3 in Push-Pull mode.
-type AltFunc3PP = gpio::AlternateFunction<gpio::AF3, gpio::PushPull>;
-
-/// Our I²C SDA pin is in Alternate Function Mode 3 in Open Drain mode.
+/// Our I²C pins are in Alternate Function Mode 3 in Open Drain mode.
 type AltFunc3OD = gpio::AlternateFunction<gpio::AF3, gpio::OpenDrain<gpio::Floating>>;
 
 /// We have some pins in Alternate Function Mode 7.
@@ -230,7 +227,7 @@ pub struct Board {
         gpio::gpioc::PC5<AltFunc8>,
     >,
     /// The Inter-Integrated Circuit Bus (aka the Two Wire Interface). Used to talk to the RTC.
-    i2c_bus: hal::i2c::I2c<cpu::I2C1, (gpio::gpioa::PA6<AltFunc3PP>, gpio::gpioa::PA7<AltFunc3OD>)>,
+    i2c_bus: hal::i2c::I2c<cpu::I2C1, (gpio::gpioa::PA6<AltFunc3OD>, gpio::gpioa::PA7<AltFunc3OD>)>,
     /// Currently, the SD/MMC controller device 'owns' our SPI bus. This is OK
     /// though, as we can 'borrow' the SPI device whenever we want. It'll only
     /// be a problem if we get another driver that wants to own the bus. We
@@ -436,7 +433,9 @@ fn main() -> ! {
         i2c_bus: hal::i2c::I2c::i2c1(
             p.I2C1,
             (
-                porta.pa6.into_af_push_pull::<gpio::AF3>(&mut porta.control),
+                porta
+                    .pa6
+                    .into_af_open_drain::<gpio::AF3, gpio::Floating>(&mut porta.control),
                 porta
                     .pa7
                     .into_af_open_drain::<gpio::AF3, gpio::Floating>(&mut porta.control),

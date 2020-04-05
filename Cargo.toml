@@ -29,9 +29,9 @@ mcp794xx = "0.2"
 neotron-common-bios = { path = "./common" }
 spin = "0.5"
 tm4c123x-hal = { version = "0.10", git = "https://github.com/thejpster/tm4c-hal", branch="i2c_updates", features = ["rt"] }
-#vga-framebuffer = { version = "0.9.0", features = ["const_fn"] }
+# vga-framebuffer = { version = "0.9.0", features = ["const_fn"] }
 vga-framebuffer = { git = "https://github.com/thejpster/vga-framebuffer-rs.git", branch="remove_double_height_mode" }
-#vga-framebuffer = { path="../../vga-framebuffer-rs", features = ["const_fn"] }
+# vga-framebuffer = { path="../../vga-framebuffer-rs" }
 
 [build-dependencies]
 cc = "1.0"

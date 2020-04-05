@@ -287,7 +287,10 @@ static GLOBAL_BOARD: spin::Mutex<Option<Board>> = spin::Mutex::new(None);
 
 /// This is both the video renderer state, and the buffer into which text
 /// characters are drawn. These should probably be two separate things.
-static mut FRAMEBUFFER: fb::FrameBuffer<VgaHardware> = fb::FrameBuffer::new();
+static mut FRAMEBUFFER: fb::FrameBuffer = fb::FrameBuffer::new();
+
+/// Hardware we need for driving the VGA output
+static mut VGA_HW: Option<VgaHardware> = None;
 
 /// This is a magic value to make the video timing work.
 const ISR_LATENCY: u32 = 24;
@@ -476,23 +479,23 @@ fn main() -> ! {
         irq3: portd.pd2.into_pull_up_input(),
     };
 
-    // Soft-VGA output
-    let vga_hw = VgaHardware {
-        h_timer: p.TIMER1,
-        h_timer2: p.TIMER2,
-        red: p.SSI1,
-        green: p.SSI2,
-        blue: p.SSI3,
-        _vsync_pin: portb.pb5.into_push_pull_output(),
-        _hsync_pin: portb.pb4.into_af_push_pull::<gpio::AF7>(&mut portb.control),
-        _red_pin: portf.pf1.into_af_push_pull::<gpio::AF2>(&mut portf.control),
-        _green_pin: portb.pb7.into_af_push_pull::<gpio::AF2>(&mut portb.control),
-        _blue_pin: portd.pd3.into_af_push_pull::<gpio::AF1>(&mut portd.control),
-    };
-
     unsafe {
-        FRAMEBUFFER.init(vga_hw);
+        // Soft-VGA output
+        let mut vga_hw = VgaHardware {
+            h_timer: p.TIMER1,
+            h_timer2: p.TIMER2,
+            red: p.SSI1,
+            green: p.SSI2,
+            blue: p.SSI3,
+            _vsync_pin: portb.pb5.into_push_pull_output(),
+            _hsync_pin: portb.pb4.into_af_push_pull::<gpio::AF7>(&mut portb.control),
+            _red_pin: portf.pf1.into_af_push_pull::<gpio::AF2>(&mut portf.control),
+            _green_pin: portb.pb7.into_af_push_pull::<gpio::AF2>(&mut portb.control),
+            _blue_pin: portd.pd3.into_af_push_pull::<gpio::AF1>(&mut portd.control),
+        };
+        FRAMEBUFFER.init(|m| vga_hw.configure(m));
         FRAMEBUFFER.set_cursor_visible(false);
+        VGA_HW = Some(vga_hw);
     }
 
     // Say hello to the nice users.
@@ -751,7 +754,7 @@ where
     }
 }
 
-impl fb::Hardware for VgaHardware {
+impl VgaHardware {
     /// Set up the SPI peripherals to clock out RGB video with the given timings.
     fn configure(&mut self, mode_info: &fb::ModeInfo) {
         // Need to configure SSI1, SSI2 and SSI3 at `clock_rate` Hz.
@@ -917,7 +920,9 @@ impl fb::Hardware for VgaHardware {
             w
         });
     }
+}
 
+impl fb::Hardware for VgaHardware {
     /// Called when V-Sync needs to be high.
     fn vsync_on(&mut self) {
         let gpio = unsafe { &*cpu::GPIO_PORTB::ptr() };
@@ -996,10 +1001,12 @@ fn TIMER1A() {
         ssi_r.dr.write(|w| w.data().bits(0));
         ssi_r.dr.write(|w| w.data().bits(0));
         ssi_g.dr.write(|w| w.data().bits(0));
-        // Run the draw routine
-        FRAMEBUFFER.isr_sol();
-        // Run the audio routine
-        // NEXT_SAMPLE = G_SYNTH.next().into();
+        if let Some(ref mut hw) = VGA_HW {
+            // Run the draw routine
+            FRAMEBUFFER.isr_sol(hw);
+            // Run the audio routine
+            // NEXT_SAMPLE = G_SYNTH.next().into();
+        }
         // Increment the clock
         if FRAMEBUFFER.line() == Some(0) {
             if FRAMES_SINCE_SECOND.fetch_add(1, atomic::Ordering::SeqCst) == 59 {

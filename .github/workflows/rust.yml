@@ -1,4 +1,4 @@
-name: Build
+ame: Build
 
 on: [push, pull_request]
 
@@ -13,7 +13,7 @@ jobs:
       with:
         submodules: true
     - name: Install GCC ARM
-      run: apt update && apt install gcc-arm-none-eabi
+      run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
     - name: Add Target
       run: rustup target add thumbv7em-none-eabi
     - name: Build

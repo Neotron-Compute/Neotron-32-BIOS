@@ -1,8 +1,9 @@
 [target.thumbv7em-none-eabihf]
 runner = 'arm-none-eabi-gdb --command=gdb.cfg -w'
 rustflags = [
-  "-C", "link-arg=-Tneotron-32-bios.ld",
+	"-C", "link-arg=-Tlink.x",
 ]
 
 [build]
+# The TM4C123 has a Cortex-M4F core
 target = "thumbv7em-none-eabihf"

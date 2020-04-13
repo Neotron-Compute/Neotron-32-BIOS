@@ -98,7 +98,6 @@
 #![no_main]
 #![no_std]
 #![deny(missing_docs)]
-#![feature(asm)]
 
 // ===========================================================================
 // Sub-Modules
@@ -135,10 +134,7 @@ type AltFunc1 = gpio::AlternateFunction<gpio::AF1, gpio::PushPull>;
 /// Some of our pins are in Alternate Function Mode 2.
 type AltFunc2 = gpio::AlternateFunction<gpio::AF2, gpio::PushPull>;
 
-/// Our I²C SCL pin is in Alternate Function Mode 3 in Push-Pull mode.
-type AltFunc3PP = gpio::AlternateFunction<gpio::AF3, gpio::PushPull>;
-
-/// Our I²C SDA pin is in Alternate Function Mode 3 in Open Drain mode.
+/// Our I²C pins are in Alternate Function Mode 3 in Open Drain mode.
 type AltFunc3OD = gpio::AlternateFunction<gpio::AF3, gpio::OpenDrain<gpio::Floating>>;
 
 /// We have some pins in Alternate Function Mode 7.
@@ -231,7 +227,7 @@ pub struct Board {
         gpio::gpioc::PC5<AltFunc8>,
     >,
     /// The Inter-Integrated Circuit Bus (aka the Two Wire Interface). Used to talk to the RTC.
-    i2c_bus: hal::i2c::I2c<cpu::I2C1, (gpio::gpioa::PA6<AltFunc3PP>, gpio::gpioa::PA7<AltFunc3OD>)>,
+    i2c_bus: hal::i2c::I2c<cpu::I2C1, (gpio::gpioa::PA6<AltFunc3OD>, gpio::gpioa::PA7<AltFunc3OD>)>,
     /// Currently, the SD/MMC controller device 'owns' our SPI bus. This is OK
     /// though, as we can 'borrow' the SPI device whenever we want. It'll only
     /// be a problem if we get another driver that wants to own the bus. We
@@ -291,7 +287,10 @@ static GLOBAL_BOARD: spin::Mutex<Option<Board>> = spin::Mutex::new(None);
 
 /// This is both the video renderer state, and the buffer into which text
 /// characters are drawn. These should probably be two separate things.
-static mut FRAMEBUFFER: fb::FrameBuffer<VgaHardware> = fb::FrameBuffer::new();
+static mut FRAMEBUFFER: fb::FrameBuffer = fb::FrameBuffer::new();
+
+/// Hardware we need for driving the VGA output
+static mut VGA_HW: Option<VgaHardware> = None;
 
 /// This is a magic value to make the video timing work.
 const ISR_LATENCY: u32 = 24;
@@ -437,7 +436,9 @@ fn main() -> ! {
         i2c_bus: hal::i2c::I2c::i2c1(
             p.I2C1,
             (
-                porta.pa6.into_af_push_pull::<gpio::AF3>(&mut porta.control),
+                porta
+                    .pa6
+                    .into_af_open_drain::<gpio::AF3, gpio::Floating>(&mut porta.control),
                 porta
                     .pa7
                     .into_af_open_drain::<gpio::AF3, gpio::Floating>(&mut porta.control),
@@ -478,27 +479,42 @@ fn main() -> ! {
         irq3: portd.pd2.into_pull_up_input(),
     };
 
-    // Soft-VGA output
-    let vga_hw = VgaHardware {
-        h_timer: p.TIMER1,
-        h_timer2: p.TIMER2,
-        red: p.SSI1,
-        green: p.SSI2,
-        blue: p.SSI3,
-        _vsync_pin: portb.pb5.into_push_pull_output(),
-        _hsync_pin: portb.pb4.into_af_push_pull::<gpio::AF7>(&mut portb.control),
-        _red_pin: portf.pf1.into_af_push_pull::<gpio::AF2>(&mut portf.control),
-        _green_pin: portb.pb7.into_af_push_pull::<gpio::AF2>(&mut portb.control),
-        _blue_pin: portd.pd3.into_af_push_pull::<gpio::AF1>(&mut portd.control),
-    };
-
     unsafe {
-        FRAMEBUFFER.init(vga_hw);
+        // Soft-VGA output
+        let mut vga_hw = VgaHardware {
+            h_timer: p.TIMER1,
+            h_timer2: p.TIMER2,
+            red: p.SSI1,
+            green: p.SSI2,
+            blue: p.SSI3,
+            _vsync_pin: portb.pb5.into_push_pull_output(),
+            _hsync_pin: portb.pb4.into_af_push_pull::<gpio::AF7>(&mut portb.control),
+            _red_pin: portf.pf1.into_af_push_pull::<gpio::AF2>(&mut portf.control),
+            _green_pin: portb.pb7.into_af_push_pull::<gpio::AF2>(&mut portb.control),
+            _blue_pin: portd.pd3.into_af_push_pull::<gpio::AF1>(&mut portd.control),
+        };
+        FRAMEBUFFER.init(|m| vga_hw.configure(m));
         FRAMEBUFFER.set_cursor_visible(false);
+        VGA_HW = Some(vga_hw);
     }
 
     // Say hello to the nice users.
     println!("{} booting...", &BIOS_VERSION[..BIOS_VERSION.len() - 1]);
+
+    extern "C" {
+        static _start_osram: u32;
+        static _end_osram: u32;
+        static _end_bios_flash: u32;
+    }
+
+    // Note:(unsafe) - only taking address of external static
+    let start_addr = unsafe { &_start_osram as &u32 as *const u32 as usize };
+    let end_addr = unsafe { &_end_osram as &u32 as *const u32 as usize };
+    let length = end_addr - start_addr;
+    println!(
+        "OSRAM 0x{:08x}..0x{:08x} = {} bytes",
+        start_addr, end_addr, length
+    );
 
     // Fetch the time from the RTC. It might be wrong, but our internal time
     // is *definitely* wrong, so this never makes things worse.
@@ -510,7 +526,10 @@ fn main() -> ! {
 
     // On this BIOS, the flash split between BIOS and OS is fixed. This value
     // must match the BIOS linker script and the OS linker script.
-    let code: &common::OsStartFn = unsafe { ::core::mem::transmute(0x0002_0000) };
+    let code: &common::OsStartFn = unsafe {
+        &*(&_end_bios_flash as *const u32
+            as *const for<'r> extern "C" fn(&'r neotron_common_bios::Api) -> !)
+    };
 
     // We assume the OS can initialise its own memory, as we have no idea how
     // much it's using so we can't initialise the memory for it.
@@ -702,7 +721,7 @@ fn load_time(board: &mut Board) {
         // Clock has been reset - setting the time starts the clock running
         // again
         println!("RTC Battery Failed! Please set time/date.");
-        dt = NaiveDate::from_ymd(2020, 03, 01).and_hms(0, 0, 0);
+        dt = NaiveDate::from_ymd(2020, 3, 1).and_hms(0, 0, 0);
         if let Err(e) = rtc.clear_power_failed() {
             println!("RTC Error: {:?}", e);
         }
@@ -753,7 +772,7 @@ where
     }
 }
 
-impl fb::Hardware for VgaHardware {
+impl VgaHardware {
     /// Set up the SPI peripherals to clock out RGB video with the given timings.
     fn configure(&mut self, mode_info: &fb::ModeInfo) {
         // Need to configure SSI1, SSI2 and SSI3 at `clock_rate` Hz.
@@ -919,7 +938,9 @@ impl fb::Hardware for VgaHardware {
             w
         });
     }
+}
 
+impl fb::Hardware for VgaHardware {
     /// Called when V-Sync needs to be high.
     fn vsync_on(&mut self) {
         let gpio = unsafe { &*cpu::GPIO_PORTB::ptr() };
@@ -969,7 +990,7 @@ fn enable(p: hal::sysctl::Domain, sc: &mut hal::sysctl::PowerControl) {
 #[interrupt]
 fn TIMER2A() {
     unsafe {
-        asm!("wfi");
+        cortex_m::asm::wfi();
         let timer = &*cpu::TIMER2::ptr();
         timer.icr.write(|w| w.caecint().set_bit());
     }
@@ -998,16 +1019,18 @@ fn TIMER1A() {
         ssi_r.dr.write(|w| w.data().bits(0));
         ssi_r.dr.write(|w| w.data().bits(0));
         ssi_g.dr.write(|w| w.data().bits(0));
-        // Run the draw routine
-        FRAMEBUFFER.isr_sol();
-        // Run the audio routine
-        // NEXT_SAMPLE = G_SYNTH.next().into();
+        if let Some(ref mut hw) = VGA_HW {
+            // Run the draw routine
+            FRAMEBUFFER.isr_sol(hw);
+            // Run the audio routine
+            // NEXT_SAMPLE = G_SYNTH.next().into();
+        }
         // Increment the clock
-        if FRAMEBUFFER.line() == Some(0) {
-            if FRAMES_SINCE_SECOND.fetch_add(1, atomic::Ordering::SeqCst) == 59 {
-                SECONDS_SINCE_EPOCH.fetch_add(1, atomic::Ordering::SeqCst);
-                FRAMES_SINCE_SECOND.store(0, atomic::Ordering::SeqCst);
-            }
+        if FRAMEBUFFER.line() == Some(0)
+            && FRAMES_SINCE_SECOND.fetch_add(1, atomic::Ordering::SeqCst) == 59
+        {
+            SECONDS_SINCE_EPOCH.fetch_add(1, atomic::Ordering::SeqCst);
+            FRAMES_SINCE_SECOND.store(0, atomic::Ordering::SeqCst);
         }
         // Clear timer A interrupt
         let timer = &*cpu::TIMER1::ptr();
@@ -1018,84 +1041,14 @@ fn TIMER1A() {
 /// Called on start of pixel data (end of back porch)
 #[interrupt]
 fn TIMER1B() {
-    // Activate the three FIFOs exactly 32 clock cycles (or 8 pixels) apart This
-    // gets the colour video lined up, as we preload the red channel with 0x00
-    // 0x00 and the green channel with 0x00.
     unsafe {
-        asm!(
-            "movs    r0, #132;
-            movs    r1, #1;
-            movt    r0, #16914;
-            mov.w   r2, #131072;
-            mov.w   r3, #262144;
-            str r1, [r0, #0];
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            str r1, [r0, r2];
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            nop;
-            str r1, [r0, r3];
-            "
-            :
-            :
-            : "r0" "r1" "r2" "r3"
-            : "volatile");
+        extern "C" {
+            fn __delay_spi();
+        }
+        // Activate the three SPI FIFOs exactly 32 clock cycles (or 8 pixels)
+        // apart. This gets the colour video lined up, as we preload the red
+        // channel with 0x00 0x00 and the green channel with 0x00.
+        __delay_spi();
         // Clear timer B interrupt
         let timer = &*cpu::TIMER1::ptr();
         timer.icr.write(|w| w.cbecint().set_bit());

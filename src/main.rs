@@ -501,6 +501,21 @@ fn main() -> ! {
     // Say hello to the nice users.
     println!("{} booting...", &BIOS_VERSION[..BIOS_VERSION.len() - 1]);
 
+    extern "C" {
+        static _start_osram: u32;
+        static _end_osram: u32;
+        static _end_bios_flash: u32;
+    }
+
+    // Note:(unsafe) - only taking address of external static
+    let start_addr = unsafe { &_start_osram as &u32 as *const u32 as usize };
+    let end_addr = unsafe { &_end_osram as &u32 as *const u32 as usize };
+    let length = end_addr - start_addr;
+    println!(
+        "OSRAM 0x{:08x}..0x{:08x} = {} bytes",
+        start_addr, end_addr, length
+    );
+
     // Fetch the time from the RTC. It might be wrong, but our internal time
     // is *definitely* wrong, so this never makes things worse.
     load_time(&mut board);
@@ -511,7 +526,10 @@ fn main() -> ! {
 
     // On this BIOS, the flash split between BIOS and OS is fixed. This value
     // must match the BIOS linker script and the OS linker script.
-    let code: &common::OsStartFn = unsafe { ::core::mem::transmute(0x0002_0000) };
+    let code: &common::OsStartFn = unsafe {
+        &*(&_end_bios_flash as *const u32
+            as *const for<'r> extern "C" fn(&'r neotron_common_bios::Api) -> !)
+    };
 
     // We assume the OS can initialise its own memory, as we have no idea how
     // much it's using so we can't initialise the memory for it.
@@ -703,7 +721,7 @@ fn load_time(board: &mut Board) {
         // Clock has been reset - setting the time starts the clock running
         // again
         println!("RTC Battery Failed! Please set time/date.");
-        dt = NaiveDate::from_ymd(2020, 03, 01).and_hms(0, 0, 0);
+        dt = NaiveDate::from_ymd(2020, 3, 1).and_hms(0, 0, 0);
         if let Err(e) = rtc.clear_power_failed() {
             println!("RTC Error: {:?}", e);
         }
@@ -1008,11 +1026,11 @@ fn TIMER1A() {
             // NEXT_SAMPLE = G_SYNTH.next().into();
         }
         // Increment the clock
-        if FRAMEBUFFER.line() == Some(0) {
-            if FRAMES_SINCE_SECOND.fetch_add(1, atomic::Ordering::SeqCst) == 59 {
-                SECONDS_SINCE_EPOCH.fetch_add(1, atomic::Ordering::SeqCst);
-                FRAMES_SINCE_SECOND.store(0, atomic::Ordering::SeqCst);
-            }
+        if FRAMEBUFFER.line() == Some(0)
+            && FRAMES_SINCE_SECOND.fetch_add(1, atomic::Ordering::SeqCst) == 59
+        {
+            SECONDS_SINCE_EPOCH.fetch_add(1, atomic::Ordering::SeqCst);
+            FRAMES_SINCE_SECOND.store(0, atomic::Ordering::SeqCst);
         }
         // Clear timer A interrupt
         let timer = &*cpu::TIMER1::ptr();

@@ -16,14 +16,14 @@ This BIOS is a work in progress. Bits of the Monotron firmware will be ported ov
 
 * [x] Get it booting
 * [x] USB Serial UART (blocking)
+* [x] Text Mode (48 x 36)
 * [ ] Time Keeping
 * [ ] USB Serial UART (with timeouts)
 * [ ] RS-232 UART
 * [ ] MIDI UART
 * [ ] SD Card
-* [ ] Text Mode (48 x 36)
-* [ ] PS/2 Keyboard Interface
 * [ ] Audio Synthesiser
+* [ ] PS/2 Keyboard Interface
 * [ ] PS/2 Mouse Interface
 * [ ] Text Mode (80 x 36)
 
@@ -37,11 +37,24 @@ The Neotron 32 has 256 KiB of Flash and 32 KiB of RAM. The Flash layout is:
 
 The RAM layout is flexible - the BIOS takes as much as it needs, then passes the OS the definitions of how much RAM is available and where it is located. The OS then dynamically allocates almost everything it needs from that. The BIOS is also responsible for configuring the stack, and moving the interrupt vector table to RAM.
 
+## Compilation and Flashing
+
+```console
+$ rustup target add thumbv7em-none-eabihf
+$ opencd # run this in another terminal
+$ cargo run --release # will compile and flash using OpenOCD
+```
+
+You will then need to install the OS. Be sure not to erase the BIOS when the install the OS!
+
 ## Changelog
 
 ### Unreleased Changes ([Source](https://github.com/neotron-compute/Neotron-32-BIOS/tree/master))
 
-* Basic UART hello on start-up
+* Initialises text mode video
+* Attempts to talk to RTC
+* Tracks wall-time during operation
+* Jumps to OS
 
 ## Licence
 

@@ -623,15 +623,18 @@ pub extern "C" fn serial_configure(
     match device {
         0 => {
             // Configure the USB JTAG/Debug interface
-            unimplemented!();
+            // TODO!
+            common::Result::Err(common::Error::Unimplemented)
         }
         1 => {
             // Configure the RS232 port
-            unimplemented!();
+            // TODO!
+            common::Result::Err(common::Error::Unimplemented)
         }
         2 => {
             // Configure the MIDI port
-            unimplemented!();
+            // TODO!
+            common::Result::Err(common::Error::Unimplemented)
         }
         _ => common::Result::Err(common::Error::InvalidDevice),
     }
@@ -678,10 +681,6 @@ pub extern "C" fn serial_write(
 ) -> common::Result<usize> {
     if let Some(ref mut board) = *crate::GLOBAL_BOARD.lock() {
         // TODO: Add a timer to the board and use it to handle the timeout.
-        // Match on the result of write:
-        // * if we get an error, return it.
-        // * if we get a WouldBlock, spin (or WFI?).
-        // * if we get Ok, carry on.
         let data = data.as_slice();
         match device {
             0 => {

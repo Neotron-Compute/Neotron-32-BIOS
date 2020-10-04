@@ -115,5 +115,5 @@ Contribution to this crate is organized under the terms of the [Rust Code of
 Conduct][CoC], the maintainer of this crate, the [Neotron team][team], promises
 to intervene to uphold that code of conduct.
 
-[CoC]: CODE_OF_CONDUCT.md
+[CoC]: https://www.rust-lang.org/policies/code-of-conduct
 [team]: https://github.com/Neotron-Compute/meta/blob/master/README.md#developers

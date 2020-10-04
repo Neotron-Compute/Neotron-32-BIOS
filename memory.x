@@ -22,10 +22,11 @@ MEMORY
    after the vector table */
 /* _stext = ORIGIN(FLASH) + 0x400; */
 
-_end_bios_flash = ORIGIN(FLASH) + LENGTH(FLASH);
+_start_os_flash_sym = ORIGIN(FLASH) + LENGTH(FLASH);
+_end_os_flash_sym = ORIGIN(FLASH) + 256K;
 
-_start_osram = ORIGIN(OSRAM);
-_end_osram = ORIGIN(OSRAM) + LENGTH(OSRAM);
+_start_osram_sym = ORIGIN(OSRAM);
+_end_osram_sym = ORIGIN(OSRAM) + LENGTH(OSRAM);
 
 /* Example of putting non-initialized variables into custom RAM locations. */
 /* This assumes you have defined a region RAM2 above, and in the Rust

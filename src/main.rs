@@ -138,8 +138,11 @@ type AltFunc1 = gpio::AlternateFunction<gpio::AF1, gpio::PushPull>;
 /// Some of our pins are in Alternate Function Mode 2.
 type AltFunc2 = gpio::AlternateFunction<gpio::AF2, gpio::PushPull>;
 
-/// Our I²C pins are in Alternate Function Mode 3 in Open Drain mode.
-type AltFunc3OD = gpio::AlternateFunction<gpio::AF3, gpio::OpenDrain<gpio::Floating>>;
+/// Our I²C Data pin must be in Open Drain mode.
+type AltFunc3OD = gpio::AlternateFunction<gpio::AF3, gpio::OpenDrain<gpio::PullUp>>;
+
+/// Our I²C Clock pin must be in Push-Pull mode.
+type AltFunc3PP = gpio::AlternateFunction<gpio::AF3, gpio::PushPull>;
 
 /// We have some pins in Alternate Function Mode 7.
 type AltFunc7 = gpio::AlternateFunction<gpio::AF7, gpio::PushPull>;
@@ -239,7 +242,7 @@ pub struct Board {
         (),
     >,
     /// The Inter-Integrated Circuit Bus (aka the Two Wire Interface). Used to talk to the RTC.
-    i2c_bus: hal::i2c::I2c<cpu::I2C1, (gpio::gpioa::PA6<AltFunc3OD>, gpio::gpioa::PA7<AltFunc3OD>)>,
+    i2c_bus: hal::i2c::I2c<cpu::I2C1, (gpio::gpioa::PA6<AltFunc3PP>, gpio::gpioa::PA7<AltFunc3OD>)>,
     /// Currently, the SD/MMC controller device 'owns' our SPI bus. This is OK
     /// though, as we can 'borrow' the SPI device whenever we want. It'll only
     /// be a problem if we get another driver that wants to own the bus. We
@@ -472,12 +475,10 @@ fn main() -> ! {
         i2c_bus: hal::i2c::I2c::i2c1(
             p.I2C1,
             (
-                porta
-                    .pa6
-                    .into_af_open_drain::<gpio::AF3, gpio::Floating>(&mut porta.control),
+                porta.pa6.into_af_push_pull::<gpio::AF3>(&mut porta.control),
                 porta
                     .pa7
-                    .into_af_open_drain::<gpio::AF3, gpio::Floating>(&mut porta.control),
+                    .into_af_open_drain::<gpio::AF3, gpio::PullUp>(&mut porta.control),
             ),
             hal::time::Hertz(100_000),
             &clocks,
@@ -546,14 +547,15 @@ fn main() -> ! {
     println!("{} booting...", &BIOS_VERSION[..BIOS_VERSION.len() - 1]);
 
     extern "C" {
-        static _start_osram: u32;
-        static _end_osram: u32;
-        static _end_bios_flash: u32;
+        static _start_osram_sym: u32;
+        static _end_osram_sym: u32;
+        static _start_os_flash_sym: u32;
+        static _end_os_flash_sym: u32;
     }
 
     // Note:(unsafe) - only taking address of external static
-    let start_addr = unsafe { &_start_osram as &u32 as *const u32 as usize };
-    let end_addr = unsafe { &_end_osram as &u32 as *const u32 as usize };
+    let start_addr = unsafe { &_start_osram_sym as &u32 as *const u32 as usize };
+    let end_addr = unsafe { &_end_osram_sym as &u32 as *const u32 as usize };
     let length = end_addr - start_addr;
     println!(
         "OSRAM 0x{:08x}..0x{:08x} = {} bytes",
@@ -573,16 +575,33 @@ fn main() -> ! {
     // it from the BIOS callback functions.
     *GLOBAL_BOARD.lock() = Some(board);
 
-    // On this BIOS, the flash split between BIOS and OS is fixed. This value
-    // must match the BIOS linker script and the OS linker script.
-    let code: &common::OsStartFn = unsafe {
-        &*(&_end_bios_flash as *const u32
-            as *const for<'r> extern "C" fn(&'r neotron_common_bios::Api) -> !)
-    };
-
     // We assume the OS can initialise its own memory, as we have no idea how
     // much it's using so we can't initialise the memory for it.
-    code(&API_CALLS);
+
+    // The first four bytes of OS flash must be the address of the start
+    // function. If it looks OK, we call it.
+
+    let start_os_flash_address = unsafe { &_start_os_flash_sym as *const u32 as usize };
+    let os_entry_address = unsafe { _start_os_flash_sym } as usize;
+    let end_os_flash_address = unsafe { &_end_os_flash_sym as *const u32 as usize };
+
+    if (os_entry_address >= start_os_flash_address) && (os_entry_address <= end_os_flash_address) {
+        // On this BIOS, the flash split between BIOS and OS is fixed. This value
+        // must match the BIOS linker script and the OS linker script.
+        let code: &common::OsStartFn = unsafe {
+            &*(&_start_os_flash_sym as *const u32
+                as *const for<'r> extern "C" fn(&'r neotron_common_bios::Api) -> !)
+        };
+        code(&API_CALLS);
+    } else {
+        println!(
+            "No OS found at 0x{:08x}..0x{:08x} (0x{:08x} is bad)",
+            start_os_flash_address, end_os_flash_address, os_entry_address
+        );
+        loop {
+            cortex_m::asm::wfi();
+        }
+    }
 }
 
 /// Get the API version this crate implements

@@ -10,8 +10,8 @@
 //! We initialise the bare-minimum of hardware required to provide a console,
 //! and then jump to the Operating System. We currently assume the Operating
 //! System is located at address 0x0002_0000 (giving 128 KiB for the BIOS and
-//! 128 KiB for the OS). The BIOS takes the top 8 KiB of RAM for stack and
-//! video ram. The OS is given the bottom 24 KiB of RAM.
+//! 128 KiB for the OS). The BIOS takes the top 6 KiB of RAM for stack and
+//! video ram. The OS is given the bottom 26 KiB of RAM.
 //!
 //! ## Hardware
 //!
@@ -19,64 +19,67 @@
 //!     * Cortex-M4F @ 80 MHz
 //!     * 32 KiB SRAM
 //!     * 256 KiB Flash ROM
-//!     * 256 KiB Flash ROM
-//! * PS/2 Keyboard and Mouse controller (connected to UART7)
-//! * Mono audio output
-//! * SD Card connector (connected to SSI3)
-//! * 800 x 600 resolution 8-colour VGA video output (connected to SSI0, SSI1 and SSI2)
+//! * A separate Human-interface Device controller
+//!    * This is an AtMega 328 connected to UART7
+//!    * It has two PS/2 ports - one for the keyboard, one for the mouse
+//!    * It also has two Atari/SEGA compatible joystick ports
+//! * Mono/Stereo audio output
+//! * SD Card connector (connected to SSI0)
+//! * 800 x 600 resolution 8-colour VGA video output (connected to SSI1, SSI2 and SSI3)
 //! * MCP7940N I²C battery-backed Real Time Clock
-//! * USB Serial interface (connected to UART0)
-//! * RS-232 serial interface (connected to UART1)
+//! * USB Serial interface (connected to UART0 - use the "Debug" USB micro-B on the Launchpad)
+//! * RS-232 serial interface
+//!    * connected to UART1
+//!    * has RTS/CTS hardware handshaking, but not RI, DSR, DTR or DCD
 //! * MIDI In and Out (connected to UART3)
-//! * Atari compatible joystick interface
-//!
+//! * PC Printer Port (via an MCP23S17 connected to SSI0)
 //!
 //! ## Pinout
 //!
-//! As of PCB revision 1.2.0, the pinout for the Launchpad is:
+//! As of PCB revision 1.3.0, the pinout for the Launchpad is:
 //!
-//! | Pin  |GPIO Name | PCB Net Name | Function                         | Field in Board |
-//! |------|----------|--------------|----------------------------------|-|
-//! | J1.1 | N/A      |              | 3.3V output from on-board LDO    | |
-//! | J1.2 | PB5      |PB5_VGA_SYNC  | VGA Vertical Sync                | `vga._vsync_pin` |
-//! | J1.3 | PB0      |PB0_U1RX      | UART RX from KB/MS/JS Controller | `hid_uart` |
-//! | J1.4 | PB1      |PB1_U1TX      | UART TX to KB/MS/JS Controller   | `hid_uart` |
-//! | J1.5 | PE4      |PE4_AUDIO_L   | Audio Left Channel               | `audio.left` |
-//! | J1.6 | PE5      |PE5_AUDIO_R   | Audio Right Channel              | `audio.right` |
-//! | J1.7 | PB4      |PB4_VGA_HSYNC | VGA Horizontal Sync              | `vga._hsync_pin` |
-//! | J1.8 | PA5      |PA5_SPI_MOSI  | SPI MOSI                         | `spi_bus` |
-//! | J1.9 | PA6      |PA6_I2C_SCL   | I²C Bus Clock                    | `i2c_bus` |
-//! | J1.10| PA7      |PA7_I2C_SDA   | I²C Bus Data                     | `i2c_bus` |
-//! | J2.1 | N/A      |GND           |                                  | |
-//! | J2.2 | PB2      |/PB2_STROBE   | Parallel Port Strobe Line        | |
-//! | J2.3 | PE0      |PE0_U7RX      | UART RX from WiFi Modem          | |
-//! | J2.4 | PF0      |/PF0_IRQ1     | IRQ 1 and Launchpad Button 1     | |
-//! | J2.5 | N/A      |/RESET        | Resets the CPU                   | |
-//! | J2.6 | PB7      |PB7_VGA_GREEN | VGA Green Channel                | `vga._green_pin` |
-//! | J2.7 | PB6      |/PB6_SPI_CS2  | SPI Chip Select 2                | `spi_cs2` |
-//! | J2.8 | PA4      |PA4_SPI_MISO  | SPI MISO                         | `spi_bus` |
-//! | J2.9 | PA3      |/PA3_SPI_CS0  | SPI Chip Select 0                | `spi_cs0` |
-//! | J2.10| PA2      |PA2_SPI_CLK   | SPI Clock                        | `spi_bus` |
-//! | J3.1 | N/A      |5V            |                                  | |
-//! | J3.2 | N/A      |GND           |                                  | |
-//! | J3.3 | PD0      |              |                                  | |
-//! | J3.4 | PD1      |              |                                  | |
-//! | J3.5 | PD2      |/PD2_IRQ3     | IRQ 3                            | |
-//! | J3.6 | PD3      |PD3_VGA_BLUE  | VGA Blue Channel                 | `vga._blue_pin` |
-//! | J3.7 | PE1      |PE1_U7TX      | UART TX to WiFi Modem            | |
-//! | J3.8 | PE2      |/PE2_SPI_CS3  | SPI Chip Select 3                | `spi_cs3` |
-//! | J3.9 | PE3      |/PE3_IRQ2     | IRQ 2                            | |
-//! | J3.10| PF1      |PF1_VGA_RED   | VGA Red Channel                  | `vga._red_pin` |
-//! | J4.1 | PF2      |              |                                  | |
-//! | J4.2 | PF3      |              |                                  | |
-//! | J4.3 | PB3      |/PB3_SPI_CS1  | SPI Chip Select 1                | `spi_cs1` |
-//! | J4.4 | PC4      |PC4_U1RTS     | UART RTS to RS-232               | |
-//! | J4.5 | PC5      |PC5_U1CTS     | UART CTS from RS-232             | |
-//! | J4.6 | PC6      |PC6_MIDI_IN   | UART RX from MIDI In             | |
-//! | J4.7 | PC7      |PC7_MIDI_OUT  | UART TX to MIDI Out              | |
-//! | J4.8 | PD6      |PD6_U2RX      | UART RX from RS-232              | |
-//! | J4.9 | PD7      |PD7_U2TX      | UART TX to RS-232                | |
-//! | J4.10| PF4      |              | Launchpad Button 2               | |
+//! | Pin  |GPIO Name | PCB Net Name  | Dir | Function                         | Field in Board struct |
+//! |------|----------|---------------|-----| ---------------------------------|-----------------------|
+//! | J1.1 | N/A      | N/A           | Out | 3.3V output from on-board LDO    |                       |
+//! | J1.2 | PB5      | PB5_VGA_SYNC  | Out | VGA Vertical Sync                | `vga._vsync_pin`      |
+//! | J1.3 | PB0      | PB0_U1RX      | In  | UART RX from KB/MS/JS Controller | `hid_uart`            |
+//! | J1.4 | PB1      | PB1_U1TX      | Out | UART TX to KB/MS/JS Controller   | `hid_uart`            |
+//! | J1.5 | PE4      | PE4_AUDIO_L   | Out | Audio Left Channel               | `audio.left`          |
+//! | J1.6 | PE5      | PE5_AUDIO_R   | Out | Audio Right Channel              | `audio.right`         |
+//! | J1.7 | PB4      | PB4_VGA_HSYNC | Out | VGA Horizontal Sync              | `vga._hsync_pin`      |
+//! | J1.8 | PA5      | PA5_SPI_COPI  | Out | SPI COPI                         | `sd_interface`        |
+//! | J1.9 | PA6      | PA6_I2C_SCL   | Out | I²C Bus Clock                    | `i2c_bus`             |
+//! | J1.10| PA7      | PA7_I2C_SDA   | Bi  | I²C Bus Data                     | `i2c_bus`             |
+//! | J2.1 | N/A      | GND           | In  |                                  |                       |
+//! | J2.2 | PB2      | /PB2_STROBE   | Out | Parallel Port Strobe Line        | `lpt_strobe`          |
+//! | J2.3 | PE0      | PE0_U7RX      | In  | UART RX from WiFi Modem          | `wifi_uart`           |
+//! | J2.4 | PF0      | /PF0_IRQ1     | In  | IRQ 1 and Launchpad Button 1     | `irq1`                |
+//! | J2.5 | N/A      | /RESET        | In  | Resets the CPU                   |                       |
+//! | J2.6 | PB7      | PB7_VGA_GREEN | Out | VGA Green Channel                | `vga._green_pin`      |
+//! | J2.7 | PB6      | /PB6_SPI_CS2  | Out | SPI Chip Select 2                | `spi_cs2`             |
+//! | J2.8 | PA4      | PA4_SPI_MISO  | Out | SPI CIPO                         | `sd_interface`        |
+//! | J2.9 | PA3      | /PA3_SPI_CS0  | Out | SPI Chip Select 0                | `sd_interface`        |
+//! | J2.10| PA2      | PA2_SPI_CLK   | Out | SPI Clock                        | `sd_interface`        |
+//! | J3.1 | N/A      | 5V            | In  |                                  |                       |
+//! | J3.2 | N/A      | GND           | In  |                                  |                       |
+//! | J3.3 | PD0      | N/A           | --- | [Wired to PB6]                   |                       |
+//! | J3.4 | PD1      | N/A           | --- | [Wired to PB7]                   |                       |
+//! | J3.5 | PD2      | /PD2_IRQ3     | In  | IRQ 3                            | `irq3`                |
+//! | J3.6 | PD3      | PD3_VGA_BLUE  | Out | VGA Blue Channel                 | `vga._blue_pin`       |
+//! | J3.7 | PE1      | PE1_U7TX      | Out | UART TX to WiFi Modem            | `wifi_uart`           |
+//! | J3.8 | PE2      | /PE2_SPI_CS3  | Out | SPI Chip Select 3                | `spi_cs3`             |
+//! | J3.9 | PE3      | /PE3_IRQ2     | In  | IRQ 2                            | `irq2`                |
+//! | J3.10| PF1      | PF1_VGA_RED   | Out | VGA Red Channel                  | `vga._red_pin`        |
+//! | J4.1 | PF2      | N/A           | Out | Launchpad Green LED              |                       |
+//! | J4.2 | PF3      | N/A           | Out | Launchpad Blue LED               |                       |
+//! | J4.3 | PB3      | /PB3_SPI_CS1  | Out | SPI Chip Select 1                | `spi_cs1`             |
+//! | J4.4 | PC4      | PC4_U1RTS     | Out | UART RTS to RS-232               | `ext_uart`            |
+//! | J4.5 | PC5      | PC5_U1CTS     | In  | UART CTS from RS-232             | `ext_uart`            |
+//! | J4.6 | PC6      | PC6_MIDI_IN   | In  | UART RX from MIDI In             | `midi_uart`           |
+//! | J4.7 | PC7      | PC7_MIDI_OUT  | Out | UART TX to MIDI Out              | `midi_uart`           |
+//! | J4.8 | PD6      | PD6_U2RX      | In  | UART RX from RS-232              | `ext_uart`            |
+//! | J4.9 | PD7      | PD7_U2TX      | Out | UART TX to RS-232                | `ext_uart`            |
+//! | J4.10| PF4      | /PF4_AT_RESET | Out | HID Reset                        | `hid_reset`           |
 //!
 //! ## License
 //!
@@ -112,6 +115,7 @@
 use core::panic::PanicInfo;
 use core::sync::atomic::{self, Ordering};
 use cortex_m_rt::entry;
+use embedded_hal::{blocking::delay::DelayMs, digital::v2::OutputPin};
 use embedded_sdmmc as sdmmc;
 use tm4c123x_hal::{
     self as hal, bb,
@@ -149,7 +153,7 @@ type PushPullOut = gpio::Output<gpio::PushPull>;
 /// An input pin with a pull-up
 type PullUpInput = gpio::Input<gpio::PullUp>;
 
-/// The type of our SPI bus
+/// The type of our general-purpose SPI bus
 type SpiDevice = hal::spi::Spi<
     cpu::SSI0,
     (
@@ -176,11 +180,11 @@ pub struct VgaHardware {
     _vsync_pin: gpio::gpiob::PB5<PushPullOut>,
     // VGA Horizontal Sync
     _hsync_pin: gpio::gpiob::PB4<AltFunc7>,
-    // VGA Red Channel (SSI1 MOSI)
+    // VGA Red Channel (SSI1 COPI)
     _red_pin: gpio::gpiof::PF1<AltFunc2>,
-    // VGA Green Channel (SSI2 MOSI)
+    // VGA Green Channel (SSI2 COPI)
     _green_pin: gpio::gpiob::PB7<AltFunc2>,
-    // VGA Blue Channel (SSI3 MOSI)
+    // VGA Blue Channel (SSI3 COPI)
     _blue_pin: gpio::gpiod::PD3<AltFunc1>,
 }
 
@@ -219,12 +223,20 @@ pub struct Board {
         (),
     >,
     /// The UART connected to the RS232 level shifter (with RTS and CTS)
-    rs232_uart: hal::serial::Serial<
+    ext_uart: hal::serial::Serial<
         hal::serial::UART1,
         gpio::gpiob::PB1<AltFunc1>,
         gpio::gpiob::PB0<AltFunc1>,
         gpio::gpioc::PC4<AltFunc8>,
         gpio::gpioc::PC5<AltFunc8>,
+    >,
+    /// The UART connected to the ESP01 Wi-Fi Modem
+    wifi_uart: hal::serial::Serial<
+        hal::serial::UART2,
+        gpio::gpiod::PD7<AltFunc1>,
+        gpio::gpiod::PD6<AltFunc1>,
+        (),
+        (),
     >,
     /// The Inter-Integrated Circuit Bus (aka the Two Wire Interface). Used to talk to the RTC.
     i2c_bus: hal::i2c::I2c<cpu::I2C1, (gpio::gpioa::PA6<AltFunc3OD>, gpio::gpioa::PA7<AltFunc3OD>)>,
@@ -236,8 +248,8 @@ pub struct Board {
     /// avoid needing to allocate big buffers) and we wouldn't want to either
     /// toggle the CSx pin for each word, nor grab the spin lock for each
     /// word.
-    sd_mmc: sdmmc::SdMmcSpi<SpiDevice, gpio::gpioa::PA3<PushPullOut>>,
-    /// Chip-select for the Parallel Port controller
+    sd_interface: sdmmc::SdMmcSpi<SpiDevice, gpio::gpioa::PA3<PushPullOut>>,
+    /// Chip-select for the PC Printer port interface controller
     spi_cs1: gpio::gpiob::PB3<PushPullOut>,
     /// Chip-select for expansion slot A
     spi_cs2: gpio::gpiob::PB6<PushPullOut>,
@@ -249,6 +261,17 @@ pub struct Board {
     irq2: gpio::gpioe::PE3<PullUpInput>,
     /// IRQ for expansion slot B
     irq3: gpio::gpiod::PD2<PullUpInput>,
+    /// Our soft audio controller
+    audio: Audio,
+    /// The strobe pin for the PC Printer interface.
+    /// We need 17 pins for this interface and the MCP23S17 only has
+    /// 16 pins, so wired the strobe pin straight to the TM4C.
+    lpt_strobe: gpio::gpiob::PB2<PushPullOut>,
+    /// We take this low to reset the HID controller. It can also be pulled
+    /// hard low by Button 2 on the Launchpad.
+    hid_reset: gpio::gpiof::PF4<gpio::Output<gpio::OpenDrain<gpio::Floating>>>,
+    /// Our Cortex-M SysTick peripheral wrapped up in a utility that can do busy-wait delays
+    delay: hal::delay::Delay,
 }
 
 /// Makes it possible to share an I²C bus with a driver that wants to own the
@@ -260,12 +283,6 @@ where
 // ===========================================================================
 // Static Variables and Constants
 // ===========================================================================
-
-/// Records the number of seconds that have elapsed since the epoch (2000-01-01T00:00:00Z).
-static SECONDS_SINCE_EPOCH: atomic::AtomicU32 = atomic::AtomicU32::new(0);
-
-/// Records the number of frames that have elapsed since second last rolled over.
-static FRAMES_SINCE_SECOND: atomic::AtomicU8 = atomic::AtomicU8::new(0);
 
 /// The BIOS version string
 static BIOS_VERSION: &str = concat!("Neotron 32 BIOS, version ", env!("CARGO_PKG_VERSION"), "\0");
@@ -298,6 +315,9 @@ const ISR_LATENCY: u32 = 24;
 /// This is a magic value for a pre-ISR which puts the CPU into a known state
 /// before our pixel start ISR.
 const ISR_LATENCY_WARMUP: u32 = 3;
+
+/// This is how long we hold the HID controller in reset
+const HID_RESET_TIME_MS: u32 = 100;
 
 // ===========================================================================
 // Macros
@@ -393,6 +413,35 @@ fn main() -> ! {
             &sc.power_control,
         ),
 
+        // RS-232 UART
+        ext_uart: hal::serial::Serial::uart1(
+            p.UART1,
+            portb.pb1.into_af_push_pull::<gpio::AF1>(&mut portb.control),
+            portb.pb0.into_af_push_pull::<gpio::AF1>(&mut portb.control),
+            portc.pc4.into_af_push_pull::<gpio::AF8>(&mut portc.control),
+            portc.pc5.into_af_push_pull::<gpio::AF8>(&mut portc.control),
+            115_200_u32.bps(),
+            hal::serial::NewlineMode::Binary,
+            &clocks,
+            &sc.power_control,
+        ),
+
+        // ESP UART
+        wifi_uart: hal::serial::Serial::uart2(
+            p.UART2,
+            portd
+                .pd7
+                .unlock(&mut portd.control)
+                .into_af_push_pull::<gpio::AF1>(&mut portd.control),
+            portd.pd6.into_af_push_pull::<gpio::AF1>(&mut portd.control),
+            (),
+            (),
+            115200_u32.bps(),
+            hal::serial::NewlineMode::Binary,
+            &clocks,
+            &sc.power_control,
+        ),
+
         // MIDI UART
         midi_uart: hal::serial::Serial::uart3(
             p.UART3,
@@ -414,19 +463,6 @@ fn main() -> ! {
             (),
             (),
             19200_u32.bps(),
-            hal::serial::NewlineMode::Binary,
-            &clocks,
-            &sc.power_control,
-        ),
-
-        // RS-232 UART
-        rs232_uart: hal::serial::Serial::uart1(
-            p.UART1,
-            portb.pb1.into_af_push_pull::<gpio::AF1>(&mut portb.control),
-            portb.pb0.into_af_push_pull::<gpio::AF1>(&mut portb.control),
-            portc.pc4.into_af_push_pull::<gpio::AF8>(&mut portc.control),
-            portc.pc5.into_af_push_pull::<gpio::AF8>(&mut portc.control),
-            115_200_u32.bps(),
             hal::serial::NewlineMode::Binary,
             &clocks,
             &sc.power_control,
@@ -456,7 +492,7 @@ fn main() -> ! {
         //
         // In fact, we probably want to change embedded-sdmmc to use the
         // blocking SPI traits so the chip select only toggles once.
-        sd_mmc: sdmmc::SdMmcSpi::new(
+        sd_interface: sdmmc::SdMmcSpi::new(
             hal::spi::Spi::spi0(
                 p.SSI0,
                 (
@@ -465,6 +501,7 @@ fn main() -> ! {
                     porta.pa5.into_af_push_pull::<gpio::AF2>(&mut porta.control),
                 ),
                 embedded_hal::spi::MODE_0,
+                // Defaut to a really low speed for SD card initialisation
                 250_000.hz(),
                 &clocks,
                 &sc.power_control,
@@ -477,6 +514,13 @@ fn main() -> ! {
         irq1: portf.pf0.unlock(&mut portf.control).into_pull_up_input(),
         irq2: porte.pe3.into_pull_up_input(),
         irq3: portd.pd2.into_pull_up_input(),
+        audio: Audio {
+            left: porte.pe4.into_push_pull_output(),
+            right: porte.pe5.into_push_pull_output(),
+        },
+        lpt_strobe: portb.pb2.into_push_pull_output(),
+        hid_reset: portf.pf4.into_open_drain_output(),
+        delay: hal::delay::Delay::new(cp.SYST, &clocks),
     };
 
     unsafe {
@@ -519,6 +563,11 @@ fn main() -> ! {
     // Fetch the time from the RTC. It might be wrong, but our internal time
     // is *definitely* wrong, so this never makes things worse.
     load_time(&mut board);
+
+    // Reset the HID controller
+    let _ = board.hid_reset.set_low();
+    board.delay_ms(HID_RESET_TIME_MS);
+    let _ = board.hid_reset.set_high();
 
     // Stash the big object with all the driver state somewhere we can access
     // it from the BIOS callback functions.
@@ -620,7 +669,7 @@ pub extern "C" fn serial_write(
                 board.usb_uart.write_all(data);
             }
             1 => {
-                board.rs232_uart.write_all(data);
+                board.ext_uart.write_all(data);
             }
             2 => {
                 board.midi_uart.write_all(data);
@@ -637,31 +686,17 @@ pub extern "C" fn serial_write(
 
 /// Get the current wall time.
 pub extern "C" fn time_get() -> common::Time {
-    let (seconds_since_epoch, frames_since_second) = loop {
-        let seconds_since_epoch = SECONDS_SINCE_EPOCH.load(atomic::Ordering::SeqCst);
-        // There is a risk that the second will roll over while we do the read.
-        let frames_since_second = FRAMES_SINCE_SECOND.load(atomic::Ordering::SeqCst);
-        // So we read the second value twice.
-        let seconds_since_epoch2 = SECONDS_SINCE_EPOCH.load(atomic::Ordering::SeqCst);
-        // And if it's the same, we're all good.
-        if seconds_since_epoch2 == seconds_since_epoch {
-            break (seconds_since_epoch, frames_since_second);
-        }
-    };
+    // TODO - read from hib::RTCC module
     common::Time {
-        seconds_since_epoch,
-        frames_since_second,
+        frames_since_second: 0,
+        seconds_since_epoch: 0,
     }
 }
 
 /// Set the current wall time.
-pub extern "C" fn time_set(new_time: common::Time) {
-    // This should stop us rolling over for a second
-    FRAMES_SINCE_SECOND.store(0, atomic::Ordering::SeqCst);
-    // Now it should be safe to update the time
-    SECONDS_SINCE_EPOCH.store(new_time.seconds_since_epoch, atomic::Ordering::SeqCst);
-    FRAMES_SINCE_SECOND.store(new_time.frames_since_second, atomic::Ordering::SeqCst);
-    // todo: Write the new time to the RTC (which is only accurate to the second)
+pub extern "C" fn time_set(_new_time: common::Time) {
+    // TODO - write to hib::RTCC module
+    // TODO: Write the new time to the RTC (which is only accurate to the second)
 }
 
 /// Gets information about the memory-mapped text buffer.
@@ -684,6 +719,8 @@ pub extern "C" fn video_memory_info_get(
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
     // TODO: Print the crash info to the console
+    // TODO: Flash an LED?
+    // TODO:
     loop {
         atomic::compiler_fence(Ordering::SeqCst);
     }
@@ -769,6 +806,13 @@ where
         in_buffer: &mut [u8],
     ) -> Result<(), Self::Error> {
         self.0.write_read(register, out_buffer, in_buffer)
+    }
+}
+
+impl Board {
+    /// Delay (busy-wait) for a specified number of milliseconds
+    fn delay_ms(&mut self, period_ms: u32) {
+        self.delay.delay_ms(period_ms);
     }
 }
 
@@ -1024,13 +1068,6 @@ fn TIMER1A() {
             FRAMEBUFFER.isr_sol(hw);
             // Run the audio routine
             // NEXT_SAMPLE = G_SYNTH.next().into();
-        }
-        // Increment the clock
-        if FRAMEBUFFER.line() == Some(0)
-            && FRAMES_SINCE_SECOND.fetch_add(1, atomic::Ordering::SeqCst) == 59
-        {
-            SECONDS_SINCE_EPOCH.fetch_add(1, atomic::Ordering::SeqCst);
-            FRAMES_SINCE_SECOND.store(0, atomic::Ordering::SeqCst);
         }
         // Clear timer A interrupt
         let timer = &*cpu::TIMER1::ptr();

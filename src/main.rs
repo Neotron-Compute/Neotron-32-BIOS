@@ -132,6 +132,9 @@ use neotron_common_bios as common;
 // Types
 // ===========================================================================
 
+/// A device specific error for when the given buffer isn't large enough.
+const ERR_BUFFER_TOO_SMALL: u16 = 1000;
+
 /// Most of our pins are in Alternate Function Mode 1.
 type AltFunc1 = gpio::AlternateFunction<gpio::AF1, gpio::PushPull>;
 
@@ -300,6 +303,8 @@ static API_CALLS: common::Api = common::Api {
     time_get,
     time_set,
     video_memory_info_get,
+    configuration_get,
+    configuration_set,
 };
 
 /// Holds the global state for the motherboard
@@ -726,6 +731,30 @@ pub extern "C" fn video_memory_info_get(
     *address = unsafe { FRAMEBUFFER.get_address() };
     *width_cols = 48;
     *height_rows = 36;
+}
+
+/// Loads config data from the TM4C EEPROM
+pub extern "C" fn configuration_get(mut buffer: common::ApiBuffer) -> common::Result<usize> {
+    // Canned config for now
+    // This is awful. Do not do this.
+    let buffer = buffer.as_mut_slice();
+    if buffer.len() >= 6 {
+        buffer[0] = 0x01;
+        buffer[1] = 0x01;
+        buffer[2] = 0x00;
+        buffer[3] = 0xc2;
+        buffer[4] = 0x01;
+        buffer[5] = 0x00;
+        common::Result::Ok(6)
+    } else {
+        common::Result::Err(common::Error::DeviceError(ERR_BUFFER_TOO_SMALL))
+    }
+}
+
+/// Saves config data to the TM4C EEPROM
+pub extern "C" fn configuration_set(buffer: common::ApiByteSlice) -> common::Result<()> {
+    println!("Store config: {:?}", buffer);
+    common::Result::Ok(())
 }
 
 // ===========================================================================

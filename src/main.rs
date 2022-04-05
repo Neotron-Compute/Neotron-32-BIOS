@@ -283,6 +283,13 @@ struct I2cBus<'a, T>(&'a mut T)
 where
     T: embedded_hal::blocking::i2c::Write + embedded_hal::blocking::i2c::WriteRead;
 
+extern "C" {
+    static mut _flash_os_start: u32;
+    static mut _flash_os_len: u32;
+    static mut _ram_os_start: u32;
+    static mut _ram_os_len: u32;
+}
+
 // ===========================================================================
 // Static Variables and Constants
 // ===========================================================================
@@ -290,16 +297,31 @@ where
 /// The BIOS version string
 static BIOS_VERSION: &str = concat!("Neotron 32 BIOS, version ", env!("CARGO_PKG_VERSION"), "\0");
 
+/// This is our Operating System. It must be compiled separately.
+///
+/// The RP2040 requires an OS linked at `0x1002_0000`, which is the OS binary
+/// `flash1002`. Use `objdump` as per the README file to make a `flash1002.bin`.
+// #[link_section = ".flash_os"]
+// #[used]
+// pub static OS_IMAGE: [u8; include_bytes!("flash0002.bin").len()] = *include_bytes!("flash0002.bin");
+
 /// The table of API calls we provide the OS
 static API_CALLS: common::Api = common::Api {
-    api_version_get,
-    bios_version_get,
-    serial_configure,
-    serial_get_info,
-    serial_write,
-    time_get,
-    time_set,
-    video_memory_info_get,
+	api_version_get,
+	bios_version_get,
+	serial_configure,
+	serial_get_info,
+	serial_write,
+	time_get,
+	time_set,
+	configuration_get,
+	configuration_set,
+	video_is_valid_mode,
+	video_set_mode,
+	video_get_mode,
+	video_get_framebuffer,
+	video_set_framebuffer,
+	memory_get_region,
 };
 
 /// Holds the global state for the motherboard
@@ -546,20 +568,12 @@ fn main() -> ! {
     // Say hello to the nice users.
     println!("{} booting...", &BIOS_VERSION[..BIOS_VERSION.len() - 1]);
 
-    extern "C" {
-        static _start_osram_sym: u32;
-        static _end_osram_sym: u32;
-        static _start_os_flash_sym: u32;
-        static _end_os_flash_sym: u32;
-    }
-
     // Note:(unsafe) - only taking address of external static
-    let start_addr = unsafe { &_start_osram_sym as &u32 as *const u32 as usize };
-    let end_addr = unsafe { &_end_osram_sym as &u32 as *const u32 as usize };
-    let length = end_addr - start_addr;
+    let start_addr = unsafe { &_ram_os_start as &u32 as *const u32 as usize };
+    let length = unsafe { &_ram_os_start as &u32 as *const u32 as usize };
     println!(
         "OSRAM 0x{:08x}..0x{:08x} = {} bytes",
-        start_addr, end_addr, length
+        start_addr, start_addr + length, length
     );
 
     // Fetch the time from the RTC. It might be wrong, but our internal time
@@ -581,151 +595,224 @@ fn main() -> ! {
     // The first four bytes of OS flash must be the address of the start
     // function. If it looks OK, we call it.
 
-    let start_os_flash_address = unsafe { &_start_os_flash_sym as *const u32 as usize };
-    let os_entry_address = unsafe { _start_os_flash_sym } as usize;
-    let end_os_flash_address = unsafe { &_end_os_flash_sym as *const u32 as usize };
-
-    if (os_entry_address >= start_os_flash_address) && (os_entry_address <= end_os_flash_address) {
-        // On this BIOS, the flash split between BIOS and OS is fixed. This value
-        // must match the BIOS linker script and the OS linker script.
-        let code: &common::OsStartFn = unsafe {
-            &*(&_start_os_flash_sym as *const u32
-                as *const for<'r> extern "C" fn(&'r neotron_common_bios::Api) -> !)
-        };
-        code(&API_CALLS);
-    } else {
-        println!(
-            "No OS found at 0x{:08x}..0x{:08x} (0x{:08x} is bad)",
-            start_os_flash_address, end_os_flash_address, os_entry_address
-        );
-        loop {
-            cortex_m::asm::wfi();
-        }
+	// Now jump to the OS
+	// let flash_os_start = unsafe { &mut _flash_os_start as *mut u32 as usize };
+	// let code: &common::OsStartFn = unsafe { ::core::mem::transmute(flash_os_start) };
+	// code(&API_CALLS);
+    loop {
+        cortex_m::asm::nop();
     }
 }
 
-/// Get the API version this crate implements
-pub extern "C" fn api_version_get() -> u32 {
-    common::API_VERSION
+
+/// Returns the version number of the BIOS API.
+pub extern "C" fn api_version_get() -> common::Version {
+	common::API_VERSION
 }
 
-/// Get this BIOS version as a string.
-pub extern "C" fn bios_version_get() -> common::ApiString<'static> {
-    BIOS_VERSION.into()
-}
-
-/// Re-configure the UART. We default to 115200/8N1 on UART1, and the other
-/// UARTs default to disabled.
-pub extern "C" fn serial_configure(
-    device: u8,
-    _serial_config: common::serial::Config,
-) -> common::Result<()> {
-    match device {
-        0 => {
-            // Configure the USB JTAG/Debug interface
-            // TODO!
-            common::Result::Err(common::Error::Unimplemented)
-        }
-        1 => {
-            // Configure the RS232 port
-            // TODO!
-            common::Result::Err(common::Error::Unimplemented)
-        }
-        2 => {
-            // Configure the MIDI port
-            // TODO!
-            common::Result::Err(common::Error::Unimplemented)
-        }
-        _ => common::Result::Err(common::Error::InvalidDevice),
-    }
-}
-
-/// Get infomation about the UARTs available in ths system.
+/// Returns a pointer to a static string slice containing the BIOS Version.
 ///
-/// We have four UARTs, but we only expose three of them. The keyboard/mouse
-/// interface UART is kept internal to the BIOS.
-pub extern "C" fn serial_get_info(device: u8) -> common::Option<common::serial::DeviceInfo> {
-    match device {
-        0 => {
-            // UART Device 0 is TM4C U0, which goes to the USB JTAG/Debug interface.
-            // No hardware handshaking.
-            common::Option::Some(common::serial::DeviceInfo {
-                device_type: common::serial::DeviceType::UsbCdc,
-                name: "UART0".into(),
-            })
-        }
-        1 => {
-            // UART Device 1 is TM4C U1, which is an RS232 interface with RTS/CTS
-            common::Option::Some(common::serial::DeviceInfo {
-                device_type: common::serial::DeviceType::Rs232,
-                name: "UART1".into(),
-            })
-        }
-        2 => {
-            // UART Device 2 is TM4C U3, which is the MIDI interface. Fixed baud, no
-            // hardware handshaking.
-            common::Option::Some(common::serial::DeviceInfo {
-                device_type: common::serial::DeviceType::Midi,
-                name: "UART2".into(),
-            })
-        }
-        _ => common::Option::None,
-    }
+/// This string contains the version number and build string of the BIOS.
+/// For C compatibility this string is null-terminated and guaranteed to
+/// only contain ASCII characters (bytes with a value 127 or lower). We
+/// also pass the length (excluding the null) to make it easy to construct
+/// a Rust string. It is unspecified as to whether the string is located
+/// in Flash ROM or RAM (but it's likely to be Flash ROM).
+pub extern "C" fn bios_version_get() -> common::ApiString<'static> {
+	common::ApiString::new(BIOS_VERSION)
 }
 
-/// Write some text to a UART.
+/// Get information about the Serial ports in the system.
+///
+/// Serial ports are ordered octet-oriented pipes. You can push octets
+/// into them using a 'write' call, and pull bytes out of them using a
+/// 'read' call. They have options which allow them to be configured at
+/// different speeds, or with different transmission settings (parity
+/// bits, stop bits, etc) - you set these with a call to
+/// `SerialConfigure`. They may physically be a MIDI interface, an RS-232
+/// port or a USB-Serial port. There is no sense of 'open' or 'close' -
+/// that is an Operating System level design feature. These APIs just
+/// reflect the raw hardware, in a similar manner to the registers exposed
+/// by a memory-mapped UART peripheral.
+pub extern "C" fn serial_get_info(_device: u8) -> common::Option<common::serial::DeviceInfo> {
+	common::Option::None
+}
+
+/// Set the options for a given serial device. An error is returned if the
+/// options are invalid for that serial device.
+pub extern "C" fn serial_configure(
+	_device: u8,
+	_config: common::serial::Config,
+) -> common::Result<()> {
+	common::Result::Err(common::Error::Unimplemented)
+}
+
+/// Write bytes to a serial port. There is no sense of 'opening' or
+/// 'closing' the device - serial devices are always open. If the return
+/// value is `Ok(n)`, the value `n` may be less than the size of the given
+/// buffer. If so, that means not all of the data could be transmitted -
+/// only the first `n` bytes were.
 pub extern "C" fn serial_write(
-    device: u8,
-    data: common::ApiByteSlice,
-    _timeout: common::Option<common::Timeout>,
+	_device: u8,
+	_data: common::ApiByteSlice,
+	_timeout: common::Option<common::Timeout>,
 ) -> common::Result<usize> {
-    if let Some(ref mut board) = *crate::GLOBAL_BOARD.lock() {
-        // TODO: Add a timer to the board and use it to handle the timeout.
-        let data = data.as_slice();
-        match device {
-            0 => {
-                board.usb_uart.write_all(data);
-            }
-            1 => {
-                board.ext_uart.write_all(data);
-            }
-            2 => {
-                board.midi_uart.write_all(data);
-            }
-            _ => {
-                return common::Result::Err(common::Error::InvalidDevice);
-            }
-        }
-        common::Result::Ok(data.len())
-    } else {
-        panic!("HW Lock fail");
-    }
+	common::Result::Err(common::Error::Unimplemented)
 }
 
 /// Get the current wall time.
+///
+/// The Neotron BIOS does not understand time zones, leap-seconds or the
+/// Gregorian calendar. It simply stores time as an incrementing number of
+/// seconds since some epoch, and the number of milliseconds since that second
+/// began. A day is assumed to be exactly 86,400 seconds long. This is a lot
+/// like POSIX time, except we have a different epoch
+/// - the Neotron epoch is 2000-01-01T00:00:00Z. It is highly recommend that you
+/// store UTC in the BIOS and use the OS to handle time-zones.
+///
+/// If the BIOS does not have a battery-backed clock, or if that battery has
+/// failed to keep time, the system starts up assuming it is the epoch.
 pub extern "C" fn time_get() -> common::Time {
-    // TODO - read from hib::RTCC module
-    common::Time {
-        frames_since_second: 0,
-        seconds_since_epoch: 0,
-    }
+	// TODO: Read from the MCP7940N
+	common::Time { secs: 0, nsecs: 0 }
 }
 
 /// Set the current wall time.
-pub extern "C" fn time_set(_new_time: common::Time) {
-    // TODO - write to hib::RTCC module
-    // TODO: Write the new time to the RTC (which is only accurate to the second)
+///
+/// See `time_get` for a description of now the Neotron BIOS should handle
+/// time.
+///
+/// You only need to call this whenever you get a new sense of the current
+/// time (e.g. the user has updated the current time, or if you get a GPS
+/// fix). The BIOS should push the time out to the battery-backed Real
+/// Time Clock, if it has one.
+pub extern "C" fn time_set(_time: common::Time) {
+	// TODO: Update the MCP7940N RTC
 }
 
-/// Gets information about the memory-mapped text buffer.
-pub extern "C" fn video_memory_info_get(
-    address: &mut *mut u8,
-    width_cols: &mut u8,
-    height_rows: &mut u8,
-) {
-    *address = unsafe { FRAMEBUFFER.get_address() };
-    *width_cols = 48;
-    *height_rows = 36;
+/// Get the configuration data block.
+///
+/// Configuration data is, to the BIOS, just a block of bytes of a given
+/// length. How it stores them is up to the BIOS - it could be EEPROM, or
+/// battery-backed SRAM.
+pub extern "C" fn configuration_get(_buffer: common::ApiBuffer) -> common::Result<usize> {
+	common::Result::Err(common::Error::Unimplemented)
+}
+
+/// Set the configuration data block.
+///
+/// See `configuration_get`.
+pub extern "C" fn configuration_set(_buffer: common::ApiByteSlice) -> common::Result<()> {
+	common::Result::Err(common::Error::Unimplemented)
+}
+
+/// Does this Neotron BIOS support this video mode?
+pub extern "C" fn video_is_valid_mode(mode: common::video::Mode) -> bool {
+	mode == common::video::Mode::new(
+		common::video::Timing::T640x480,
+		common::video::Format::Text8x16,
+	)
+}
+
+/// Switch to a new video mode.
+///
+/// The contents of the screen are undefined after a call to this function.
+///
+/// If the BIOS does not have enough reserved RAM (or dedicated VRAM) to
+/// support this mode, the change will succeed but a subsequent call to
+/// `video_get_framebuffer` will return `null`. You must then supply a
+/// pointer to a block of size `Mode::frame_size_bytes()` to
+/// `video_set_framebuffer` before any video will appear.
+pub extern "C" fn video_set_mode(_mode: common::video::Mode) -> common::Result<()> {
+	common::Result::Err(common::Error::Unimplemented)
+}
+
+/// Returns the video mode the BIOS is currently in.
+///
+/// The OS should call this function immediately after start-up and note
+/// the value - this is the `default` video mode which can always be
+/// serviced without supplying extra RAM.
+pub extern "C" fn video_get_mode() -> common::video::Mode {
+	common::video::Mode::new_double_width(
+		common::video::Timing::T800x600,
+		common::video::Format::Text8x16,
+	)
+}
+
+/// Get the framebuffer address.
+///
+/// We can write through this address to the video framebuffer. The
+/// meaning of the data we write, and the size of the region we are
+/// allowed to write to, is a function of the current video mode (see
+/// `video_get_mode`).
+///
+/// This function will return `null` if the BIOS isn't able to support the
+/// current video mode from its memory reserves. If that happens, you will
+/// need to use some OS RAM or Application RAM and provide that as a
+/// framebuffer to `video_set_framebuffer`. The BIOS will always be able
+/// to provide the 'basic' text buffer experience from reserves, so this
+/// function will never return `null` on start-up.
+pub extern "C" fn video_get_framebuffer() -> *mut u8 {
+	unsafe { FRAMEBUFFER.get_address() as *mut u8 }
+}
+
+/// Set the framebuffer address.
+///
+/// Tell the BIOS where it should start fetching pixel or textual data
+/// from (depending on the current video mode).
+///
+/// This value is forgotten after a video mode change and must be
+/// re-supplied.
+pub extern "C" fn video_set_framebuffer(_buffer: *mut u8) -> common::Result<()> {
+	common::Result::Err(common::Error::Unimplemented)
+}
+
+/// Find out how large a given region of memory is.
+///
+/// The first region is the 'main application region' and is defined to always
+/// start at address `0x2000_0000` on a standard Cortex-M system. This
+/// application region stops just before the BIOS reserved memory, at the top of
+/// the internal SRAM. The OS will have been linked to use the first 1 KiB of
+/// this region.
+///
+/// Other regions may be located at other addresses (e.g. external DRAM or
+/// PSRAM).
+///
+/// The OS will always load non-relocatable applications into the bottom of
+/// Region 0. It can allocate OS specific structures from any other Region (if
+/// any), or from the top of Region 0 (although this reduces the maximum
+/// application space available). The OS will prefer lower numbered regions
+/// (other than Region 0), so faster memory should be listed first.
+///
+/// If the region number given is invalid, the function returns `(null, 0)`.
+///
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn memory_get_region(
+	region: u8,
+	out_start: *mut *mut u8,
+	out_len: *mut usize,
+) -> common::Result<()> {
+	// The clippy allow is because the API isn't marked as 'unsafe', and so we
+	// can't mark this function as 'unsafe'.
+	match region {
+		// Application Region
+		0 => {
+			if !out_start.is_null() {
+				unsafe {
+					let ram_os_start = &mut _ram_os_start as *mut u32 as *mut u8;
+					out_start.write(ram_os_start);
+				}
+			}
+			if !out_len.is_null() {
+				unsafe {
+					let ram_os_len = &mut _ram_os_len as *const u32 as usize;
+					out_len.write(ram_os_len);
+				}
+			}
+			common::Result::Ok(())
+		}
+		_ => common::Result::Err(common::Error::InvalidDevice),
+	}
 }
 
 // ===========================================================================
@@ -783,9 +870,9 @@ fn load_time(board: &mut Board) {
         if let Err(e) = rtc.enable_backup_battery_power() {
             println!("RTC Error {:?}", e);
         }
-        if let Err(e) = rtc.set_datetime(&dt) {
-            println!("RTC Error {:?}", e);
-        }
+        // if let Err(e) = rtc.set_datetime(&dt) {
+        //     println!("RTC Error {:?}", e);
+        // }
         if let Err(e) = rtc.enable() {
             println!("RTC Error {:?}", e);
         }
@@ -796,8 +883,8 @@ fn load_time(board: &mut Board) {
     let our_epoch = Utc.ymd(2001, 1, 1).and_hms(0, 0, 0).timestamp();
     let seconds_since_epoch = (posix_time - our_epoch) as u32;
     time_set(common::Time {
-        seconds_since_epoch,
-        frames_since_second: 0,
+        secs: seconds_since_epoch,
+        nsecs: 0,
     });
 }
 
